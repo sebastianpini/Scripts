@@ -1,6 +1,6 @@
 # Scripts
 
-A curated list of useful scripts in this repo. For full details, see each script's README in its folder.
+A curated list of useful scripts in this repo.
 
 ## PowerShell
 
