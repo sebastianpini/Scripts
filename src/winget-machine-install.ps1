@@ -32,3 +32,35 @@ Write-Log -Level Info -Message "Starting winget machine install for Id=$Id"
 Write-Log -Level Info -Message "LogPath=$LogPath"
 Write-Log -Level Info -Message "OS=$([System.Environment]::OSVersion.VersionString)"
 Write-Log -Level Info -Message "PowerShell=$($PSVersionTable.PSVersion)"
+
+function Get-WingetPath {
+    $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+
+    $app = Get-AppxPackage -AllUsers -Name "Microsoft.DesktopAppInstaller" -ErrorAction SilentlyContinue
+    if ($app -and $app.InstallLocation) {
+        $candidate = Join-Path -Path $app.InstallLocation -ChildPath "winget.exe"
+        if (Test-Path $candidate) { return $candidate }
+    }
+
+    return $null
+}
+
+function Ensure-Winget {
+    $path = Get-WingetPath
+    if ($path) { return $path }
+
+    Write-Log -Level Warn -Message "winget not found, attempting to install App Installer"
+
+    $tmp = Join-Path -Path $env:TEMP -ChildPath "AppInstaller.msixbundle"
+    Invoke-WebRequest -Uri "https://aka.ms/getwinget" -OutFile $tmp
+    Add-AppxPackage -Path $tmp
+
+    Start-Sleep -Seconds 2
+    $path = Get-WingetPath
+    if (-not $path) {
+        throw "winget still not available after install attempt"
+    }
+
+    return $path
+}
