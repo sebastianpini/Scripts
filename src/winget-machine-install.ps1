@@ -64,3 +64,34 @@ function Ensure-Winget {
 
     return $path
 }
+
+function Get-WingetPackageInfo {
+    param([string]$WingetPath, [string]$Id)
+
+    $output = & $WingetPath show --id $Id --output json 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log -Level Error -Message "winget show failed: $output"
+        throw "winget show failed for Id=$Id"
+    }
+
+    try {
+        return $output | ConvertFrom-Json
+    } catch {
+        Write-Log -Level Error -Message "Failed to parse winget JSON output"
+        throw
+    }
+}
+
+function Supports-MachineScope {
+    param([object]$PkgInfo)
+
+    if (-not $PkgInfo -or -not $PkgInfo.Installers) { return $false }
+
+    foreach ($installer in $PkgInfo.Installers) {
+        if ($installer.Scope -and $installer.Scope.ToString().ToLowerInvariant() -eq "machine") {
+            return $true
+        }
+    }
+
+    return $false
+}
