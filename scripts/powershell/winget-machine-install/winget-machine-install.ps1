@@ -1,3 +1,11 @@
+<#
+.SYNOPSIS
+Installs a Winget package in machine scope under SYSTEM.
+
+.DESCRIPTION
+Ensures winget is available, validates machine scope support, and installs
+with RMM-friendly logging to stdout/stderr and a temp log file.
+#>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
