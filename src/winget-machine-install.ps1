@@ -95,3 +95,31 @@ function Supports-MachineScope {
 
     return $false
 }
+
+function Install-WingetPackage {
+    param([string]$WingetPath, [string]$Id)
+
+    $output = & $WingetPath install --id $Id --scope machine --accept-package-agreements --accept-source-agreements 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log -Level Error -Message "winget install failed: $output"
+        throw "winget install failed for Id=$Id"
+    }
+
+    Write-Log -Level Info -Message "Install completed successfully"
+}
+
+try {
+    $wingetPath = Ensure-Winget
+    Write-Log -Level Info -Message "Using winget at $wingetPath"
+
+    $pkg = Get-WingetPackageInfo -WingetPath $wingetPath -Id $Id
+    if (-not (Supports-MachineScope -PkgInfo $pkg)) {
+        Write-Log -Level Error -Message "Package does not support machine scope"
+        throw "Machine scope not supported for Id=$Id"
+    }
+
+    Install-WingetPackage -WingetPath $wingetPath -Id $Id
+} catch {
+    Write-Log -Level Error -Message $_
+    throw
+}
