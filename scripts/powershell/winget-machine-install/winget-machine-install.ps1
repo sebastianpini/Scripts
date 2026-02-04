@@ -40,6 +40,29 @@ function Write-Log {
     Add-Content -Path $script:LogPath -Value $line
 }
 
+function Normalize-WingetOutput {
+    param(
+        [Parameter(Mandatory = $true)][string]$Output,
+        [Parameter(Mandatory = $false)][int]$MaxLines = 6
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Output)) { return "" }
+
+    $lines = $Output -split "\r?\n"
+    $filtered = foreach ($line in $lines) {
+        $trim = $line.Trim()
+        if (-not $trim) { continue }
+        if ($trim -match '\b(KB|MB|GB)\b\s*/\s*[\d\.]+') { continue }
+        if ($trim -match '^[\s\-\|\\/]+$') { continue }
+        $trim
+    }
+
+    if (-not $filtered -or $filtered.Count -eq 0) { return "" }
+
+    $tail = $filtered | Select-Object -Last $MaxLines
+    return ($tail -join "`n")
+}
+
 function Invoke-WingetWithTimeout {
     param(
         [Parameter(Mandatory = $true)][string]$WingetPath,
@@ -188,15 +211,15 @@ function Convert-Architecture {
     if ([string]::IsNullOrWhiteSpace($Architecture)) { return $null }
     $value = $Architecture.ToString().Trim().ToLowerInvariant()
 
-    return switch ($value) {
-        'amd64' { 'x64' }
-        'x64' { 'x64' }
-        'x86' { 'x86' }
-        'x32' { 'x86' }
-        'i386' { 'x86' }
-        'arm64' { 'arm64' }
-        'aarch64' { 'arm64' }
-        default { $value }
+    switch ($value) {
+        'amd64' { return 'x64' }
+        'x64' { return 'x64' }
+        'x86' { return 'x86' }
+        'x32' { return 'x86' }
+        'i386' { return 'x86' }
+        'arm64' { return 'arm64' }
+        'aarch64' { return 'arm64' }
+        default { return $value }
     }
 }
 
@@ -252,7 +275,21 @@ function Install-WingetPackage {
     Write-Log -Level Info -Message "Running winget install for Id=$Id"
     $output = & $WingetPath install --id $Id --source winget --scope machine --accept-package-agreements --accept-source-agreements --disable-interactivity 2>&1
     if ($LASTEXITCODE -ne 0) {
-        Write-Log -Level Error -Message "winget install failed: $output"
+        $rawOutput = if ($output -is [array]) { $output -join "`n" } else { [string]$output }
+        $cleanOutput = Normalize-WingetOutput -Output $rawOutput
+        if ([string]::IsNullOrWhiteSpace($cleanOutput)) { $cleanOutput = $rawOutput }
+
+        $alreadyInstalled =
+            ($cleanOutput -match '(?i)already installed') -or
+            ($cleanOutput -match '(?i)no available upgrade found') -or
+            ($cleanOutput -match '(?i)no newer package versions are available')
+
+        if ($alreadyInstalled) {
+            Write-Log -Level Warning -Message "winget install indicates already installed or no upgrade available for Id=$Id. Output: $cleanOutput"
+            return
+        }
+
+        Write-Log -Level Error -Message "winget install failed: $cleanOutput"
         throw "winget install failed for Id=$Id"
     }
 
