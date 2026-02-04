@@ -408,38 +408,58 @@ function Invoke-WingetMachineInstall {
 
     $script:LogPath = $LogPath
 
-    Write-Log -Level Info -Message "Starting winget machine install for Id=$Id"
+    $ids = $Id -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_.Length -gt 0 }
+    if (-not $ids -or $ids.Count -eq 0) {
+        throw "No package IDs provided"
+    }
+
+    Write-Log -Level Info -Message "Starting winget machine install for Ids=$($ids -join ', ')"
     Write-Log -Level Info -Message "LogPath=$LogPath"
     Write-Log -Level Info -Message "OS=$([System.Environment]::OSVersion.VersionString)"
     Write-Log -Level Info -Message "PowerShell=$($PSVersionTable.PSVersion)"
 
-    try {
-        $wingetPath = Initialize-Winget
-        Write-Log -Level Info -Message "Using winget at $wingetPath"
+    $wingetPath = Initialize-Winget
+    Write-Log -Level Info -Message "Using winget at $wingetPath"
 
-        $installStart = Get-Date
-        $pkg = Get-WingetPackageInfo -WingetPath $wingetPath -Id $Id
-        $deviceArch = Get-DeviceArchitecture
-        Write-Log -Level Info -Message "Device architecture: $deviceArch"
+    $deviceArch = Get-DeviceArchitecture
+    Write-Log -Level Info -Message "Device architecture: $deviceArch"
 
-        if ($pkg -and $pkg.SkipScopeCheck -eq $true) {
-            Write-Log -Level Warning -Message "Skipping machine scope check due to winget show timeout"
-        } else {
-            $archInstallers = Get-InstallersForArchitecture -PkgInfo $pkg -Architecture $deviceArch
-            Write-Log -Level Info -Message "Matching installers for ${deviceArch}: $($archInstallers.Count)"
-            if (-not (Test-MachineScopeForArchitecture -PkgInfo $pkg -Architecture $deviceArch)) {
-                Write-Log -Level Error -Message "Package does not support machine scope for architecture $deviceArch"
-                throw "Machine scope not supported for Id=$Id on architecture $deviceArch"
+    $successCount = 0
+    $failureCount = 0
+
+    foreach ($pkgId in $ids) {
+        Write-Log -Level Info -Message "Processing Id=$pkgId"
+
+        try {
+            $installStart = Get-Date
+            $pkg = Get-WingetPackageInfo -WingetPath $wingetPath -Id $pkgId
+
+            if ($pkg -and $pkg.SkipScopeCheck -eq $true) {
+                Write-Log -Level Warning -Message "Skipping machine scope check due to winget show timeout for Id=$pkgId"
+            } else {
+                $archInstallers = Get-InstallersForArchitecture -PkgInfo $pkg -Architecture $deviceArch
+                Write-Log -Level Info -Message "Matching installers for ${deviceArch}: $($archInstallers.Count)"
+                if (-not (Test-MachineScopeForArchitecture -PkgInfo $pkg -Architecture $deviceArch)) {
+                    Write-Log -Level Error -Message "Package does not support machine scope for architecture $deviceArch"
+                    throw "Machine scope not supported for Id=$pkgId on architecture $deviceArch"
+                }
+                Write-Log -Level Info -Message "Machine scope supported, starting install"
             }
-            Write-Log -Level Info -Message "Machine scope supported, starting install"
-        }
 
-        Install-WingetPackage -WingetPath $wingetPath -Id $Id
-        Set-PublicDesktopShortcut -Id $Id -InstallStart $installStart
-        Write-Log -Level Info -Message "Script completed"
-    } catch {
-        Write-Log -Level Error -Message $_
-        throw
+            Install-WingetPackage -WingetPath $wingetPath -Id $pkgId
+            Set-PublicDesktopShortcut -Id $pkgId -InstallStart $installStart
+            Write-Log -Level Info -Message "Id=$pkgId completed successfully"
+            $successCount += 1
+        } catch {
+            $failureCount += 1
+            Write-Log -Level Error -Message "Id=$pkgId failed: $_"
+        }
+    }
+
+    Write-Log -Level Info -Message "Completed. Successes=$successCount Failures=$failureCount"
+
+    if ($successCount -eq 0) {
+        throw "All package installs failed"
     }
 }
 
