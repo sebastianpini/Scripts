@@ -4,7 +4,7 @@
 Change Log:
 - 1.2.0: Copy Start Menu shortcut to Public Desktop after install.
 - 1.1.1: Standardized warning output to [Warning].
-- 1.1.0: Single-file packaging; embedded module loaded via New-Module.
+- 1.1.0: Single-file packaging.
 Example output:
 [Info] Starting winget machine install for Id=Microsoft.PowerShell
 [Info] LogPath=C:\Users\...\AppData\Local\Temp\winget-install-Microsoft.PowerShell-20260204-120000.log
@@ -25,7 +25,6 @@ param(
     [string]$Architecture = $env:architecture
 )
 
-$moduleText = @'
 function Write-Log {
     param(
         [Parameter(Mandatory = $true)][ValidateSet('Info','Warning','Error')][string]$Level,
@@ -398,14 +397,6 @@ function Invoke-WingetMachineInstall {
         throw "All package installs failed"
     }
 }
-
-Export-ModuleMember -Function Get-WingetPath, Initialize-Winget, Get-WingetPackageInfo, Test-MachineScopeForArchitecture, Get-DeviceArchitecture, Get-InstallersForArchitecture, Convert-Architecture, Install-WingetPackage, Invoke-WingetMachineInstall, Convert-WingetShowTextToPackageInfo, Invoke-WingetWithTimeout, Get-StartMenuShortcuts, Find-BestShortcut, Set-PublicDesktopShortcut
-'@
-
-# Load the embedded module so this script can run as a single file in RMM tools.
-$moduleScriptBlock = [ScriptBlock]::Create($moduleText)
-$module = New-Module -Name "winget-machine-install" -ScriptBlock $moduleScriptBlock
-Import-Module $module -Force
 
 Invoke-WingetMachineInstall -Id $Id -LogPath $LogPath
 exit 0
