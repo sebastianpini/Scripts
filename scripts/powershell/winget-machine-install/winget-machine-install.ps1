@@ -183,44 +183,27 @@ function Get-WingetPackageInfo {
     return Convert-WingetShowTextToPackageInfo -Output $textResult.Output
 }
 
-function Test-MachineScope {
-    param([object]$PkgInfo)
-
-    if (-not $PkgInfo -or -not $PkgInfo.Installers) { return $false }
-
-    foreach ($installer in $PkgInfo.Installers) {
-        if ($installer.Scope -and $installer.Scope.ToString().ToLowerInvariant() -eq "machine") {
-            return $true
-        }
-    }
-
-    return $false
-}
-
 function Convert-Architecture {
     param([string]$Architecture)
 
-    if (-not $Architecture) { return $null }
+    if ([string]::IsNullOrWhiteSpace($Architecture)) { return $null }
     $value = $Architecture.ToString().Trim().ToLowerInvariant()
 
-    switch ($value) {
-        'amd64' { return 'x64' }
-        'x64' { return 'x64' }
-        'x86' { return 'x86' }
-        'x32' { return 'x86' }
-        'i386' { return 'x86' }
-        'arm64' { return 'arm64' }
-        'aarch64' { return 'arm64' }
-        default { return $value }
+    return switch ($value) {
+        'amd64' { 'x64' }
+        'x64' { 'x64' }
+        'x86' { 'x86' }
+        'x32' { 'x86' }
+        'i386' { 'x86' }
+        'arm64' { 'arm64' }
+        'aarch64' { 'arm64' }
+        default { $value }
     }
 }
 
 function Get-DeviceArchitecture {
     $arch = $env:architecture
-    if (-not $arch -or $arch.Trim().Length -eq 0) {
-        $arch = "x64"
-    }
-
+    if ([string]::IsNullOrWhiteSpace($arch)) { $arch = "x64" }
     return (Convert-Architecture -Architecture $arch)
 }
 
@@ -254,22 +237,14 @@ function Test-MachineScopeForArchitecture {
     $matching = Get-InstallersForArchitecture -PkgInfo $PkgInfo -Architecture $Architecture
     if (-not $matching -or $matching.Count -eq 0) { return $false }
 
-    $scopes = @()
-    foreach ($installer in $matching) {
-        if ($installer.Scope) {
-            $scopes += $installer.Scope.ToString().ToLowerInvariant()
-        }
-    }
+    $scopes = $matching |
+        Where-Object { $_.Scope } |
+        ForEach-Object { $_.Scope.ToString().ToLowerInvariant() }
 
     if ($scopes -contains 'machine') { return $true }
-    if ($scopes.Count -eq 0) { return $true }
+    if (-not $scopes -or $scopes.Count -eq 0) { return $true }
 
-    $onlyUser = $true
-    foreach ($scope in $scopes) {
-        if ($scope -ne 'user') { $onlyUser = $false }
-    }
-
-    return (-not $onlyUser)
+    return (($scopes | Where-Object { $_ -ne 'user' }).Count -gt 0)
 }
 
 function Install-WingetPackage {
@@ -286,14 +261,9 @@ function Install-WingetPackage {
 }
 
 function Get-StartMenuShortcuts {
-    $paths = @("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs")
-    $shortcuts = @()
-    foreach ($path in $paths) {
-        if (Test-Path $path) {
-            $shortcuts += Get-ChildItem -Path $path -Filter "*.lnk" -Recurse -ErrorAction SilentlyContinue
-        }
-    }
-    return $shortcuts
+    $path = "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs"
+    if (-not (Test-Path $path)) { return @() }
+    return Get-ChildItem -Path $path -Filter "*.lnk" -Recurse -ErrorAction SilentlyContinue
 }
 
 function Find-BestShortcut {
@@ -311,12 +281,9 @@ function Find-BestShortcut {
         $_.BaseName.ToLowerInvariant().Contains($normalizedId) -or $_.Name.ToLowerInvariant().Contains($normalizedId)
     }
 
-    if ($nameMatches -and $nameMatches.Count -gt 0) {
-        return ($nameMatches | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
-    }
-
-    if ($recent -and $recent.Count -gt 0) {
-        return ($recent | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+    $candidates = if ($nameMatches -and $nameMatches.Count -gt 0) { $nameMatches } else { $recent }
+    if ($candidates -and $candidates.Count -gt 0) {
+        return ($candidates | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
     }
 
     return $null
@@ -369,7 +336,7 @@ function Invoke-WingetMachineInstall {
         [string]$LogPath
     )
 
-    if (-not $LogPath -or $LogPath.Trim().Length -eq 0) {
+    if ([string]::IsNullOrWhiteSpace($LogPath)) {
         $safeId = $Id -replace '[^a-zA-Z0-9._-]', '_'
         $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
         $LogPath = Join-Path -Path $env:TEMP -ChildPath "winget-install-$safeId-$timestamp.log"
@@ -377,8 +344,8 @@ function Invoke-WingetMachineInstall {
 
     $script:LogPath = $LogPath
 
-    $ids = $Id -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_.Length -gt 0 }
-    if (-not $ids -or $ids.Count -eq 0) {
+    $ids = $Id -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+    if (-not $ids) {
         throw "No package IDs provided"
     }
 
@@ -432,7 +399,7 @@ function Invoke-WingetMachineInstall {
     }
 }
 
-Export-ModuleMember -Function Get-WingetPath, Initialize-Winget, Get-WingetPackageInfo, Test-MachineScope, Test-MachineScopeForArchitecture, Get-DeviceArchitecture, Get-InstallersForArchitecture, Convert-Architecture, Install-WingetPackage, Invoke-WingetMachineInstall, Convert-WingetShowTextToPackageInfo, Invoke-WingetWithTimeout, Get-StartMenuShortcuts, Find-BestShortcut, Set-PublicDesktopShortcut
+Export-ModuleMember -Function Get-WingetPath, Initialize-Winget, Get-WingetPackageInfo, Test-MachineScopeForArchitecture, Get-DeviceArchitecture, Get-InstallersForArchitecture, Convert-Architecture, Install-WingetPackage, Invoke-WingetMachineInstall, Convert-WingetShowTextToPackageInfo, Invoke-WingetWithTimeout, Get-StartMenuShortcuts, Find-BestShortcut, Set-PublicDesktopShortcut
 '@
 
 # Load the embedded module so this script can run as a single file in RMM tools.
