@@ -19,7 +19,10 @@ param(
     [string]$Id = $env:wingetId,
 
     [Parameter(Mandatory = $false)]
-    [string]$LogPath
+    [string]$LogPath,
+
+    [Parameter(Mandatory = $false)]
+    [string]$Architecture = $env:architecture
 )
 
 $moduleText = @'
@@ -91,12 +94,37 @@ function Convert-WingetShowTextToPackageInfo {
     param([Parameter(Mandatory = $true)][object]$Output)
 
     $text = if ($Output -is [array]) { $Output -join "`n" } else { [string]$Output }
-    $regexOptions = [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::Multiline
-    $matches = [regex]::Matches($text, '^\s*Scope:\s*(\S+)\s*$', $regexOptions)
-
+    $lines = $text -split "`n"
     $installers = @()
-    foreach ($match in $matches) {
-        $installers += [pscustomobject]@{ Scope = $match.Groups[1].Value }
+    $current = $null
+
+    foreach ($line in $lines) {
+        if ($line -match '^\s*Installer:\s*$') {
+            if ($current) { $installers += [pscustomobject]$current }
+            $current = @{}
+            continue
+        }
+
+        if ($line -match '^\s*([^:]+):\s*(.+)$') {
+            $key = $matches[1].Trim().ToLowerInvariant()
+            $value = $matches[2].Trim()
+
+            switch ($key) {
+                'scope' { $current['Scope'] = $value }
+                'installer architecture' { $current['Architecture'] = $value }
+                'architecture' { $current['Architecture'] = $value }
+            }
+        }
+    }
+
+    if ($current) { $installers += [pscustomobject]$current }
+
+    if (-not $installers -or $installers.Count -eq 0) {
+        $regexOptions = [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::Multiline
+        $matches = [regex]::Matches($text, '^\s*Scope:\s*(\S+)\s*$', $regexOptions)
+        foreach ($match in $matches) {
+            $installers += [pscustomobject]@{ Scope = $match.Groups[1].Value }
+        }
     }
 
     [pscustomobject]@{ Installers = $installers }
@@ -198,6 +226,81 @@ function Supports-MachineScope {
     }
 
     return $false
+}
+
+function Normalize-Architecture {
+    param([string]$Architecture)
+
+    if (-not $Architecture) { return $null }
+    $value = $Architecture.ToString().Trim().ToLowerInvariant()
+
+    switch ($value) {
+        'amd64' { return 'x64' }
+        'x64' { return 'x64' }
+        'x86' { return 'x86' }
+        'x32' { return 'x86' }
+        'i386' { return 'x86' }
+        'arm64' { return 'arm64' }
+        'aarch64' { return 'arm64' }
+        default { return $value }
+    }
+}
+
+function Get-DeviceArchitecture {
+    $arch = $env:architecture
+    if (-not $arch -or $arch.Trim().Length -eq 0) {
+        $arch = "x64"
+    }
+
+    return (Normalize-Architecture -Architecture $arch)
+}
+
+function Get-InstallersForArchitecture {
+    param(
+        [Parameter(Mandatory = $true)][object]$PkgInfo,
+        [Parameter(Mandatory = $true)][string]$Architecture
+    )
+
+    $normalizedArch = Normalize-Architecture -Architecture $Architecture
+    $installers = @()
+
+    foreach ($installer in $PkgInfo.Installers) {
+        $installerArch = Normalize-Architecture -Architecture $installer.Architecture
+        if (-not $installerArch -or $installerArch -eq $normalizedArch) {
+            $installers += $installer
+        }
+    }
+
+    return $installers
+}
+
+function Supports-MachineScopeForArchitecture {
+    param(
+        [Parameter(Mandatory = $true)][object]$PkgInfo,
+        [Parameter(Mandatory = $true)][string]$Architecture
+    )
+
+    if (-not $PkgInfo -or -not $PkgInfo.Installers) { return $false }
+
+    $matching = Get-InstallersForArchitecture -PkgInfo $PkgInfo -Architecture $Architecture
+    if (-not $matching -or $matching.Count -eq 0) { return $false }
+
+    $scopes = @()
+    foreach ($installer in $matching) {
+        if ($installer.Scope) {
+            $scopes += $installer.Scope.ToString().ToLowerInvariant()
+        }
+    }
+
+    if ($scopes -contains 'machine') { return $true }
+    if ($scopes.Count -eq 0) { return $true }
+
+    $onlyUser = $true
+    foreach ($scope in $scopes) {
+        if ($scope -ne 'user') { $onlyUser = $false }
+    }
+
+    return (-not $onlyUser)
 }
 
 function Install-WingetPackage {
@@ -316,13 +419,17 @@ function Invoke-WingetMachineInstall {
 
         $installStart = Get-Date
         $pkg = Get-WingetPackageInfo -WingetPath $wingetPath -Id $Id
+        $deviceArch = Get-DeviceArchitecture
+        Write-Log -Level Info -Message "Device architecture: $deviceArch"
+
         if ($pkg -and $pkg.SkipScopeCheck -eq $true) {
             Write-Log -Level Warning -Message "Skipping machine scope check due to winget show timeout"
         } else {
-            Write-Log -Level Info -Message "Package info installers count: $($pkg.Installers.Count)"
-            if (-not (Supports-MachineScope -PkgInfo $pkg)) {
-                Write-Log -Level Error -Message "Package does not support machine scope or scope information missing from winget show output"
-                throw "Machine scope not supported or scope missing for Id=$Id"
+            $archInstallers = Get-InstallersForArchitecture -PkgInfo $pkg -Architecture $deviceArch
+            Write-Log -Level Info -Message "Matching installers for ${deviceArch}: $($archInstallers.Count)"
+            if (-not (Supports-MachineScopeForArchitecture -PkgInfo $pkg -Architecture $deviceArch)) {
+                Write-Log -Level Error -Message "Package does not support machine scope for architecture $deviceArch"
+                throw "Machine scope not supported for Id=$Id on architecture $deviceArch"
             }
             Write-Log -Level Info -Message "Machine scope supported, starting install"
         }
@@ -336,7 +443,7 @@ function Invoke-WingetMachineInstall {
     }
 }
 
-Export-ModuleMember -Function Get-WingetPath, Ensure-Winget, Get-WingetPackageInfo, Supports-MachineScope, Install-WingetPackage, Invoke-WingetMachineInstall, Convert-WingetShowTextToPackageInfo, Invoke-Winget, Invoke-WingetWithTimeout, Get-StartMenuShortcuts, Find-BestShortcut, Ensure-PublicDesktopShortcut
+Export-ModuleMember -Function Get-WingetPath, Ensure-Winget, Get-WingetPackageInfo, Supports-MachineScope, Supports-MachineScopeForArchitecture, Get-DeviceArchitecture, Get-InstallersForArchitecture, Normalize-Architecture, Install-WingetPackage, Invoke-WingetMachineInstall, Convert-WingetShowTextToPackageInfo, Invoke-Winget, Invoke-WingetWithTimeout, Get-StartMenuShortcuts, Find-BestShortcut, Ensure-PublicDesktopShortcut
 '@
 
 # Load the embedded module so this script can run as a single file in RMM tools.
