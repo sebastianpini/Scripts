@@ -146,7 +146,7 @@ function Get-WingetPath {
     return $null
 }
 
-function Ensure-Winget {
+function Initialize-Winget {
     $path = Get-WingetPath
     if ($path) { return $path }
 
@@ -214,7 +214,7 @@ function Get-WingetPackageInfo {
     }
 }
 
-function Supports-MachineScope {
+function Test-MachineScope {
     param([object]$PkgInfo)
 
     if (-not $PkgInfo -or -not $PkgInfo.Installers) { return $false }
@@ -228,7 +228,7 @@ function Supports-MachineScope {
     return $false
 }
 
-function Normalize-Architecture {
+function Convert-Architecture {
     param([string]$Architecture)
 
     if (-not $Architecture) { return $null }
@@ -252,7 +252,7 @@ function Get-DeviceArchitecture {
         $arch = "x64"
     }
 
-    return (Normalize-Architecture -Architecture $arch)
+    return (Convert-Architecture -Architecture $arch)
 }
 
 function Get-InstallersForArchitecture {
@@ -261,11 +261,11 @@ function Get-InstallersForArchitecture {
         [Parameter(Mandatory = $true)][string]$Architecture
     )
 
-    $normalizedArch = Normalize-Architecture -Architecture $Architecture
+    $normalizedArch = Convert-Architecture -Architecture $Architecture
     $installers = @()
 
     foreach ($installer in $PkgInfo.Installers) {
-        $installerArch = Normalize-Architecture -Architecture $installer.Architecture
+        $installerArch = Convert-Architecture -Architecture $installer.Architecture
         if (-not $installerArch -or $installerArch -eq $normalizedArch) {
             $installers += $installer
         }
@@ -274,7 +274,7 @@ function Get-InstallersForArchitecture {
     return $installers
 }
 
-function Supports-MachineScopeForArchitecture {
+function Test-MachineScopeForArchitecture {
     param(
         [Parameter(Mandatory = $true)][object]$PkgInfo,
         [Parameter(Mandatory = $true)][string]$Architecture
@@ -353,7 +353,7 @@ function Find-BestShortcut {
     return $null
 }
 
-function Ensure-PublicDesktopShortcut {
+function Set-PublicDesktopShortcut {
     param(
         [Parameter(Mandatory = $true)][string]$Id,
         [Parameter(Mandatory = $true)][datetime]$InstallStart
@@ -414,7 +414,7 @@ function Invoke-WingetMachineInstall {
     Write-Log -Level Info -Message "PowerShell=$($PSVersionTable.PSVersion)"
 
     try {
-        $wingetPath = Ensure-Winget
+        $wingetPath = Initialize-Winget
         Write-Log -Level Info -Message "Using winget at $wingetPath"
 
         $installStart = Get-Date
@@ -427,7 +427,7 @@ function Invoke-WingetMachineInstall {
         } else {
             $archInstallers = Get-InstallersForArchitecture -PkgInfo $pkg -Architecture $deviceArch
             Write-Log -Level Info -Message "Matching installers for ${deviceArch}: $($archInstallers.Count)"
-            if (-not (Supports-MachineScopeForArchitecture -PkgInfo $pkg -Architecture $deviceArch)) {
+            if (-not (Test-MachineScopeForArchitecture -PkgInfo $pkg -Architecture $deviceArch)) {
                 Write-Log -Level Error -Message "Package does not support machine scope for architecture $deviceArch"
                 throw "Machine scope not supported for Id=$Id on architecture $deviceArch"
             }
@@ -435,7 +435,7 @@ function Invoke-WingetMachineInstall {
         }
 
         Install-WingetPackage -WingetPath $wingetPath -Id $Id
-        Ensure-PublicDesktopShortcut -Id $Id -InstallStart $installStart
+        Set-PublicDesktopShortcut -Id $Id -InstallStart $installStart
         Write-Log -Level Info -Message "Script completed"
     } catch {
         Write-Log -Level Error -Message $_
@@ -443,7 +443,7 @@ function Invoke-WingetMachineInstall {
     }
 }
 
-Export-ModuleMember -Function Get-WingetPath, Ensure-Winget, Get-WingetPackageInfo, Supports-MachineScope, Supports-MachineScopeForArchitecture, Get-DeviceArchitecture, Get-InstallersForArchitecture, Normalize-Architecture, Install-WingetPackage, Invoke-WingetMachineInstall, Convert-WingetShowTextToPackageInfo, Invoke-Winget, Invoke-WingetWithTimeout, Get-StartMenuShortcuts, Find-BestShortcut, Ensure-PublicDesktopShortcut
+Export-ModuleMember -Function Get-WingetPath, Initialize-Winget, Get-WingetPackageInfo, Test-MachineScope, Test-MachineScopeForArchitecture, Get-DeviceArchitecture, Get-InstallersForArchitecture, Convert-Architecture, Install-WingetPackage, Invoke-WingetMachineInstall, Convert-WingetShowTextToPackageInfo, Invoke-Winget, Invoke-WingetWithTimeout, Get-StartMenuShortcuts, Find-BestShortcut, Set-PublicDesktopShortcut
 '@
 
 # Load the embedded module so this script can run as a single file in RMM tools.
