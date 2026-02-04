@@ -1,6 +1,13 @@
 <#
 .SYNOPSIS
-Installs a Winget package in machine scope under SYSTEM.
+[Version 1.2.0] Installs a Winget package in machine scope under SYSTEM.
+Change Log:
+- 1.2.0: Copy Start Menu shortcut to Public Desktop after install.
+- 1.1.1: Standardized warning output to [Warning].
+- 1.1.0: Single-file packaging; embedded module loaded via New-Module.
+Example output:
+[Info] Starting winget machine install for Id=Microsoft.PowerShell
+[Info] LogPath=C:\Users\...\AppData\Local\Temp\winget-install-Microsoft.PowerShell-20260204-120000.log
 
 .DESCRIPTION
 Ensures winget is available, validates machine scope support, and installs
@@ -8,22 +15,17 @@ with RMM-friendly logging to stdout/stderr and a temp log file.
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$Id,
+    [Parameter(Mandatory = $false)]
+    [string]$Id = $env:wingetId,
 
     [Parameter(Mandatory = $false)]
     [string]$LogPath
 )
 
-if (-not $LogPath -or $LogPath.Trim().Length -eq 0) {
-    $safeId = $Id -replace '[^a-zA-Z0-9._-]', '_'
-    $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $LogPath = Join-Path -Path $env:TEMP -ChildPath "winget-install-$safeId-$timestamp.log"
-}
-
+$moduleText = @'
 function Write-Log {
     param(
-        [Parameter(Mandatory = $true)][ValidateSet('Info','Warn','Error')][string]$Level,
+        [Parameter(Mandatory = $true)][ValidateSet('Info','Warning','Error')][string]$Level,
         [Parameter(Mandatory = $true)][string]$Message
     )
 
@@ -33,22 +35,84 @@ function Write-Log {
     } else {
         Write-Output $line
     }
-    Add-Content -Path $LogPath -Value $line
+    Add-Content -Path $script:LogPath -Value $line
 }
 
-Write-Log -Level Info -Message "Starting winget machine install for Id=$Id"
-Write-Log -Level Info -Message "LogPath=$LogPath"
-Write-Log -Level Info -Message "OS=$([System.Environment]::OSVersion.VersionString)"
-Write-Log -Level Info -Message "PowerShell=$($PSVersionTable.PSVersion)"
+function Invoke-Winget {
+    param(
+        [Parameter(Mandatory = $true)][string]$WingetPath,
+        [Parameter(Mandatory = $true)][string[]]$ArgsList
+    )
+
+    $output = & $WingetPath @ArgsList 2>&1
+    [pscustomobject]@{
+        Output = $output
+        ExitCode = $LASTEXITCODE
+    }
+}
+
+function Invoke-WingetWithTimeout {
+    param(
+        [Parameter(Mandatory = $true)][string]$WingetPath,
+        [Parameter(Mandatory = $true)][string[]]$ArgsList,
+        [Parameter(Mandatory = $true)][int]$TimeoutSeconds
+    )
+
+    $tmpOut = Join-Path -Path $env:TEMP -ChildPath ("winget-timeout-" + [System.Guid]::NewGuid().ToString("N") + ".log")
+    $tmpErr = Join-Path -Path $env:TEMP -ChildPath ("winget-timeout-" + [System.Guid]::NewGuid().ToString("N") + ".err")
+
+    $argString = $ArgsList -join " "
+    $process = Start-Process -FilePath $WingetPath -ArgumentList $argString -NoNewWindow -PassThru -RedirectStandardOutput $tmpOut -RedirectStandardError $tmpErr
+
+    $finished = $process.WaitForExit($TimeoutSeconds * 1000)
+    if (-not $finished) {
+        try { Stop-Process -Id $process.Id -Force } catch {}
+        return [pscustomobject]@{
+            Output = "Timed out after $TimeoutSeconds seconds"
+            ExitCode = 124
+            TimedOut = $true
+        }
+    }
+
+    $stdout = if (Test-Path $tmpOut) { Get-Content -Path $tmpOut -Raw } else { "" }
+    $stderr = if (Test-Path $tmpErr) { Get-Content -Path $tmpErr -Raw } else { "" }
+    if ($stderr -and $stderr.Trim().Length -gt 0) {
+        $stdout = $stdout + "`n" + $stderr
+    }
+
+    return [pscustomobject]@{
+        Output = $stdout
+        ExitCode = $process.ExitCode
+        TimedOut = $false
+    }
+}
+
+function Convert-WingetShowTextToPackageInfo {
+    param([Parameter(Mandatory = $true)][object]$Output)
+
+    $text = if ($Output -is [array]) { $Output -join "`n" } else { [string]$Output }
+    $regexOptions = [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::Multiline
+    $matches = [regex]::Matches($text, '^\s*Scope:\s*(\S+)\s*$', $regexOptions)
+
+    $installers = @()
+    foreach ($match in $matches) {
+        $installers += [pscustomobject]@{ Scope = $match.Groups[1].Value }
+    }
+
+    [pscustomobject]@{ Installers = $installers }
+}
 
 function Get-WingetPath {
     $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
 
-    $app = Get-AppxPackage -AllUsers -Name "Microsoft.DesktopAppInstaller" -ErrorAction SilentlyContinue
-    if ($app -and $app.InstallLocation) {
-        $candidate = Join-Path -Path $app.InstallLocation -ChildPath "winget.exe"
-        if (Test-Path $candidate) { return $candidate }
+    $apps = Get-AppxPackage -AllUsers -Name "Microsoft.DesktopAppInstaller" -ErrorAction SilentlyContinue
+    if ($apps) {
+        $app = $apps | Where-Object { $_.InstallLocation } | Sort-Object Version -Descending | Select-Object -First 1
+        if ($app -and $app.InstallLocation) {
+            $candidate = Join-Path -Path $app.InstallLocation -ChildPath "winget.exe"
+            if (Test-Path $candidate) { return $candidate }
+        }
     }
 
     return $null
@@ -58,7 +122,7 @@ function Ensure-Winget {
     $path = Get-WingetPath
     if ($path) { return $path }
 
-    Write-Log -Level Warn -Message "winget not found, attempting to install App Installer"
+    Write-Log -Level Warning -Message "winget not found, attempting to install App Installer"
 
     $tmp = Join-Path -Path $env:TEMP -ChildPath "AppInstaller.msixbundle"
     Invoke-WebRequest -Uri "https://aka.ms/getwinget" -OutFile $tmp
@@ -76,14 +140,46 @@ function Ensure-Winget {
 function Get-WingetPackageInfo {
     param([string]$WingetPath, [string]$Id)
 
-    $output = & $WingetPath show --id $Id --output json 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Log -Level Error -Message "winget show failed: $output"
+    Write-Log -Level Info -Message "Running winget show for Id=$Id"
+    $result = Invoke-Winget -WingetPath $WingetPath -ArgsList @("show", "--id", $Id, "--source", "winget", "--output", "json", "--accept-source-agreements", "--disable-interactivity")
+    $outputText = if ($result.Output -is [array]) { $result.Output -join "`n" } else { [string]$result.Output }
+
+    if ($result.ExitCode -ne 0) {
+        if ($outputText -match "Argument name was not recognized.*--output") {
+            Write-Log -Level Warning -Message "winget show --output json not supported, falling back to text output"
+            $fallbackStart = Get-Date
+            Write-Log -Level Info -Message "Starting winget show text fallback at $fallbackStart"
+            $textResult = Invoke-WingetWithTimeout -WingetPath $WingetPath -ArgsList @("show", "--id", $Id, "--source", "winget", "--accept-source-agreements", "--disable-interactivity") -TimeoutSeconds 60
+            $fallbackEnd = Get-Date
+            $elapsed = New-TimeSpan -Start $fallbackStart -End $fallbackEnd
+            Write-Log -Level Info -Message "Completed winget show text fallback at $fallbackEnd (elapsed $($elapsed.TotalSeconds)s)"
+            if ($textResult.TimedOut) {
+                Write-Log -Level Warning -Message "winget show text fallback timed out; skipping machine scope check"
+                return [pscustomobject]@{
+                    Installers = @()
+                    SkipScopeCheck = $true
+                }
+            }
+            if ($textResult.ExitCode -ne 0) {
+                $outputText = [string]$textResult.Output
+                if ($outputText -match "Found\s+.+\[" -and $outputText -match "Installer:") {
+                    Write-Log -Level Warning -Message "winget show returned non-zero exit code but output looks valid; continuing"
+                } else {
+                    Write-Log -Level Error -Message "winget show failed: $($textResult.Output)"
+                    throw "winget show failed for Id=$Id"
+                }
+            }
+            Write-Log -Level Info -Message "winget show text output length: $(([string]$textResult.Output).Length)"
+            return Convert-WingetShowTextToPackageInfo -Output $textResult.Output
+        }
+
+        Write-Log -Level Error -Message "winget show failed: $($result.Output)"
         throw "winget show failed for Id=$Id"
     }
 
     try {
-        return $output | ConvertFrom-Json
+        Write-Log -Level Info -Message "winget show JSON output length: $($outputText.Length)"
+        return $outputText | ConvertFrom-Json
     } catch {
         Write-Log -Level Error -Message "Failed to parse winget JSON output"
         throw
@@ -107,7 +203,8 @@ function Supports-MachineScope {
 function Install-WingetPackage {
     param([string]$WingetPath, [string]$Id)
 
-    $output = & $WingetPath install --id $Id --scope machine --accept-package-agreements --accept-source-agreements 2>&1
+    Write-Log -Level Info -Message "Running winget install for Id=$Id"
+    $output = & $WingetPath install --id $Id --source winget --scope machine --accept-package-agreements --accept-source-agreements --disable-interactivity 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Log -Level Error -Message "winget install failed: $output"
         throw "winget install failed for Id=$Id"
@@ -116,18 +213,136 @@ function Install-WingetPackage {
     Write-Log -Level Info -Message "Install completed successfully"
 }
 
-try {
-    $wingetPath = Ensure-Winget
-    Write-Log -Level Info -Message "Using winget at $wingetPath"
+function Get-StartMenuShortcuts {
+    $paths = @("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs")
+    $shortcuts = @()
+    foreach ($path in $paths) {
+        if (Test-Path $path) {
+            $shortcuts += Get-ChildItem -Path $path -Filter "*.lnk" -Recurse -ErrorAction SilentlyContinue
+        }
+    }
+    return $shortcuts
+}
 
-    $pkg = Get-WingetPackageInfo -WingetPath $wingetPath -Id $Id
-    if (-not (Supports-MachineScope -PkgInfo $pkg)) {
-        Write-Log -Level Error -Message "Package does not support machine scope"
-        throw "Machine scope not supported for Id=$Id"
+function Find-BestShortcut {
+    param(
+        [Parameter(Mandatory = $true)][object[]]$Shortcuts,
+        [Parameter(Mandatory = $true)][string]$Id,
+        [Parameter(Mandatory = $true)][datetime]$InstallStart
+    )
+
+    $graceStart = $InstallStart.AddMinutes(-2)
+    $recent = $Shortcuts | Where-Object { $_.LastWriteTime -ge $graceStart }
+
+    $normalizedId = $Id.ToLowerInvariant()
+    $nameMatches = $recent | Where-Object {
+        $_.BaseName.ToLowerInvariant().Contains($normalizedId) -or $_.Name.ToLowerInvariant().Contains($normalizedId)
     }
 
-    Install-WingetPackage -WingetPath $wingetPath -Id $Id
-} catch {
-    Write-Log -Level Error -Message $_
-    throw
+    if ($nameMatches -and $nameMatches.Count -gt 0) {
+        return ($nameMatches | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+    }
+
+    if ($recent -and $recent.Count -gt 0) {
+        return ($recent | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+    }
+
+    return $null
 }
+
+function Ensure-PublicDesktopShortcut {
+    param(
+        [Parameter(Mandatory = $true)][string]$Id,
+        [Parameter(Mandatory = $true)][datetime]$InstallStart
+    )
+
+    $publicDesktop = "C:\\Users\\Public\\Desktop"
+    if (-not (Test-Path $publicDesktop)) {
+        Write-Log -Level Warning -Message "Public Desktop not found at $publicDesktop"
+        return
+    }
+
+    $shortcuts = Get-StartMenuShortcuts
+    if (-not $shortcuts -or $shortcuts.Count -eq 0) {
+        Write-Log -Level Warning -Message "No Start Menu shortcuts found to copy"
+        return
+    }
+
+    $match = Find-BestShortcut -Shortcuts $shortcuts -Id $Id -InstallStart $InstallStart
+    if (-not $match) {
+        Write-Log -Level Warning -Message "No suitable Start Menu shortcut found for Id=$Id"
+        return
+    }
+
+    $dest = Join-Path -Path $publicDesktop -ChildPath $match.Name
+    if (Test-Path $dest) {
+        Write-Log -Level Info -Message "Public Desktop shortcut already exists: $dest"
+        return
+    }
+
+    try {
+        Copy-Item -Path $match.FullName -Destination $dest -Force
+        Write-Log -Level Info -Message "Copied shortcut to Public Desktop: $dest"
+    } catch {
+        Write-Log -Level Warning -Message "Failed to copy shortcut to Public Desktop: $_"
+    }
+}
+
+function Invoke-WingetMachineInstall {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Id,
+
+        [Parameter(Mandatory = $false)]
+        [string]$LogPath
+    )
+
+    if (-not $LogPath -or $LogPath.Trim().Length -eq 0) {
+        $safeId = $Id -replace '[^a-zA-Z0-9._-]', '_'
+        $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+        $LogPath = Join-Path -Path $env:TEMP -ChildPath "winget-install-$safeId-$timestamp.log"
+    }
+
+    $script:LogPath = $LogPath
+
+    Write-Log -Level Info -Message "Starting winget machine install for Id=$Id"
+    Write-Log -Level Info -Message "LogPath=$LogPath"
+    Write-Log -Level Info -Message "OS=$([System.Environment]::OSVersion.VersionString)"
+    Write-Log -Level Info -Message "PowerShell=$($PSVersionTable.PSVersion)"
+
+    try {
+        $wingetPath = Ensure-Winget
+        Write-Log -Level Info -Message "Using winget at $wingetPath"
+
+        $installStart = Get-Date
+        $pkg = Get-WingetPackageInfo -WingetPath $wingetPath -Id $Id
+        if ($pkg -and $pkg.SkipScopeCheck -eq $true) {
+            Write-Log -Level Warning -Message "Skipping machine scope check due to winget show timeout"
+        } else {
+            Write-Log -Level Info -Message "Package info installers count: $($pkg.Installers.Count)"
+            if (-not (Supports-MachineScope -PkgInfo $pkg)) {
+                Write-Log -Level Error -Message "Package does not support machine scope or scope information missing from winget show output"
+                throw "Machine scope not supported or scope missing for Id=$Id"
+            }
+            Write-Log -Level Info -Message "Machine scope supported, starting install"
+        }
+
+        Install-WingetPackage -WingetPath $wingetPath -Id $Id
+        Ensure-PublicDesktopShortcut -Id $Id -InstallStart $installStart
+        Write-Log -Level Info -Message "Script completed"
+    } catch {
+        Write-Log -Level Error -Message $_
+        throw
+    }
+}
+
+Export-ModuleMember -Function Get-WingetPath, Ensure-Winget, Get-WingetPackageInfo, Supports-MachineScope, Install-WingetPackage, Invoke-WingetMachineInstall, Convert-WingetShowTextToPackageInfo, Invoke-Winget, Invoke-WingetWithTimeout, Get-StartMenuShortcuts, Find-BestShortcut, Ensure-PublicDesktopShortcut
+'@
+
+# Load the embedded module so this script can run as a single file in RMM tools.
+$moduleScriptBlock = [ScriptBlock]::Create($moduleText)
+$module = New-Module -Name "winget-machine-install" -ScriptBlock $moduleScriptBlock
+Import-Module $module -Force
+
+Invoke-WingetMachineInstall -Id $Id -LogPath $LogPath
+exit 0
