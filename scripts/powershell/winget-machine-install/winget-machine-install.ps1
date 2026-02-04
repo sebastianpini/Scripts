@@ -41,19 +41,6 @@ function Write-Log {
     Add-Content -Path $script:LogPath -Value $line
 }
 
-function Invoke-Winget {
-    param(
-        [Parameter(Mandatory = $true)][string]$WingetPath,
-        [Parameter(Mandatory = $true)][string[]]$ArgsList
-    )
-
-    $output = & $WingetPath @ArgsList 2>&1
-    [pscustomobject]@{
-        Output = $output
-        ExitCode = $LASTEXITCODE
-    }
-}
-
 function Invoke-WingetWithTimeout {
     param(
         [Parameter(Mandatory = $true)][string]$WingetPath,
@@ -169,49 +156,31 @@ function Get-WingetPackageInfo {
     param([string]$WingetPath, [string]$Id)
 
     Write-Log -Level Info -Message "Running winget show for Id=$Id"
-    $result = Invoke-Winget -WingetPath $WingetPath -ArgsList @("show", "--id", $Id, "--source", "winget", "--output", "json", "--accept-source-agreements", "--disable-interactivity")
-    $outputText = if ($result.Output -is [array]) { $result.Output -join "`n" } else { [string]$result.Output }
+    $showStart = Get-Date
+    $textResult = Invoke-WingetWithTimeout -WingetPath $WingetPath -ArgsList @("show", "--id", $Id, "--source", "winget", "--accept-source-agreements", "--disable-interactivity") -TimeoutSeconds 60
+    $showEnd = Get-Date
+    $elapsed = New-TimeSpan -Start $showStart -End $showEnd
+    Write-Log -Level Info -Message "Completed winget show text at $showEnd (elapsed $($elapsed.TotalSeconds)s)"
 
-    if ($result.ExitCode -ne 0) {
-        if ($outputText -match "Argument name was not recognized.*--output") {
-            Write-Log -Level Warning -Message "winget show --output json not supported, falling back to text output"
-            $fallbackStart = Get-Date
-            Write-Log -Level Info -Message "Starting winget show text fallback at $fallbackStart"
-            $textResult = Invoke-WingetWithTimeout -WingetPath $WingetPath -ArgsList @("show", "--id", $Id, "--source", "winget", "--accept-source-agreements", "--disable-interactivity") -TimeoutSeconds 60
-            $fallbackEnd = Get-Date
-            $elapsed = New-TimeSpan -Start $fallbackStart -End $fallbackEnd
-            Write-Log -Level Info -Message "Completed winget show text fallback at $fallbackEnd (elapsed $($elapsed.TotalSeconds)s)"
-            if ($textResult.TimedOut) {
-                Write-Log -Level Warning -Message "winget show text fallback timed out; skipping machine scope check"
-                return [pscustomobject]@{
-                    Installers = @()
-                    SkipScopeCheck = $true
-                }
-            }
-            if ($textResult.ExitCode -ne 0) {
-                $outputText = [string]$textResult.Output
-                if ($outputText -match "Found\s+.+\[" -and $outputText -match "Installer:") {
-                    Write-Log -Level Warning -Message "winget show returned non-zero exit code but output looks valid; continuing"
-                } else {
-                    Write-Log -Level Error -Message "winget show failed: $($textResult.Output)"
-                    throw "winget show failed for Id=$Id"
-                }
-            }
-            Write-Log -Level Info -Message "winget show text output length: $(([string]$textResult.Output).Length)"
-            return Convert-WingetShowTextToPackageInfo -Output $textResult.Output
+    if ($textResult.TimedOut) {
+        Write-Log -Level Warning -Message "winget show text timed out; skipping machine scope check"
+        return [pscustomobject]@{
+            Installers = @()
+            SkipScopeCheck = $true
         }
-
-        Write-Log -Level Error -Message "winget show failed: $($result.Output)"
-        throw "winget show failed for Id=$Id"
     }
 
-    try {
-        Write-Log -Level Info -Message "winget show JSON output length: $($outputText.Length)"
-        return $outputText | ConvertFrom-Json
-    } catch {
-        Write-Log -Level Error -Message "Failed to parse winget JSON output"
-        throw
+    if ($textResult.ExitCode -ne 0) {
+        $outputText = [string]$textResult.Output
+        if ($outputText -match "Found\s+.+\[" -and $outputText -match "Installer:") {
+            Write-Log -Level Warning -Message "winget show returned non-zero exit code but output looks valid; continuing"
+        } else {
+            Write-Log -Level Error -Message "winget show failed: $($textResult.Output)"
+            throw "winget show failed for Id=$Id"
+        }
     }
+
+    return Convert-WingetShowTextToPackageInfo -Output $textResult.Output
 }
 
 function Test-MachineScope {
@@ -463,7 +432,7 @@ function Invoke-WingetMachineInstall {
     }
 }
 
-Export-ModuleMember -Function Get-WingetPath, Initialize-Winget, Get-WingetPackageInfo, Test-MachineScope, Test-MachineScopeForArchitecture, Get-DeviceArchitecture, Get-InstallersForArchitecture, Convert-Architecture, Install-WingetPackage, Invoke-WingetMachineInstall, Convert-WingetShowTextToPackageInfo, Invoke-Winget, Invoke-WingetWithTimeout, Get-StartMenuShortcuts, Find-BestShortcut, Set-PublicDesktopShortcut
+Export-ModuleMember -Function Get-WingetPath, Initialize-Winget, Get-WingetPackageInfo, Test-MachineScope, Test-MachineScopeForArchitecture, Get-DeviceArchitecture, Get-InstallersForArchitecture, Convert-Architecture, Install-WingetPackage, Invoke-WingetMachineInstall, Convert-WingetShowTextToPackageInfo, Invoke-WingetWithTimeout, Get-StartMenuShortcuts, Find-BestShortcut, Set-PublicDesktopShortcut
 '@
 
 # Load the embedded module so this script can run as a single file in RMM tools.
