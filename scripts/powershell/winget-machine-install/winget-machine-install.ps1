@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
-[Version 1.2.0] Installs a Winget package in machine scope under SYSTEM.
+[Version 1.3.0] Installs a Winget package in machine scope under SYSTEM.
 Change Log:
+- 1.3.0: Optional exact-version install + installed-version pinning with end summary.
 - 1.2.0: Copy Start Menu shortcut to Public Desktop after install.
 - 1.1.1: Standardized warning output to [Warning].
 - 1.1.0: Single-file packaging.
@@ -12,11 +13,23 @@ Example output:
 .DESCRIPTION
 Ensures winget is available, validates machine scope support, and installs
 with RMM-friendly logging to stdout/stderr and a temp log file.
+
+.NOTES
+Provided AS IS, without warranty of any kind, express or implied, including
+merchantability, fitness for a particular purpose, or noninfringement. Use at
+your own risk. The author shall not be liable for any claim, damages, or other
+liability arising from, out of, or in connection with the script or its use.
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $false)]
     [string]$Id = $env:wingetId,
+
+    [Parameter(Mandatory = $false)]
+    [string]$Version = $env:wingetVersion,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$PinInstalledVersion,
 
     [Parameter(Mandatory = $false)]
     [string]$LogPath,
@@ -61,6 +74,30 @@ function Normalize-WingetOutput {
 
     $tail = $filtered | Select-Object -Last $MaxLines
     return ($tail -join "`n")
+}
+
+function Convert-WingetOutputToText {
+    param([Parameter(Mandatory = $true)][object]$Output)
+
+    if ($null -eq $Output) { return "" }
+    if ($Output -is [array]) {
+        return (($Output | ForEach-Object { [string]$_ }) -join "`n")
+    }
+
+    return [string]$Output
+}
+
+function Invoke-Winget {
+    param(
+        [Parameter(Mandatory = $true)][string]$WingetPath,
+        [Parameter(Mandatory = $true)][string[]]$ArgsList
+    )
+
+    $output = & $WingetPath @ArgsList 2>&1
+    [pscustomobject]@{
+        Output = $output
+        ExitCode = $LASTEXITCODE
+    }
 }
 
 function Invoke-WingetWithTimeout {
@@ -192,12 +229,14 @@ function Get-WingetPackageInfo {
         }
     }
 
+    $outputText = Convert-WingetOutputToText -Output $textResult.Output
     if ($textResult.ExitCode -ne 0) {
-        $outputText = [string]$textResult.Output
         if ($outputText -match "Found\s+.+\[" -and $outputText -match "Installer:") {
             Write-Log -Level Warning -Message "winget show returned non-zero exit code but output looks valid; continuing"
         } else {
-            Write-Log -Level Error -Message "winget show failed: $($textResult.Output)"
+            $cleanOutput = Normalize-WingetOutput -Output $outputText
+            if ([string]::IsNullOrWhiteSpace($cleanOutput)) { $cleanOutput = $outputText }
+            Write-Log -Level Error -Message "winget show failed: $cleanOutput"
             throw "winget show failed for Id=$Id"
         }
     }
@@ -227,6 +266,30 @@ function Get-DeviceArchitecture {
     $arch = $env:architecture
     if ([string]::IsNullOrWhiteSpace($arch)) { $arch = "x64" }
     return (Convert-Architecture -Architecture $arch)
+}
+
+function Get-PerPackageOptionMap {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$Ids,
+        [Parameter(Mandatory = $false)][string]$RawValue,
+        [Parameter(Mandatory = $true)][string]$OptionName
+    )
+
+    $map = @{}
+    if ([string]::IsNullOrWhiteSpace($RawValue)) { return $map }
+
+    $values = $RawValue -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+    if (-not $values -or $values.Count -eq 0) { return $map }
+
+    if ($values.Count -ne $Ids.Count) {
+        throw "$OptionName count ($($values.Count)) must match Id count ($($Ids.Count))"
+    }
+
+    for ($i = 0; $i -lt $Ids.Count; $i++) {
+        $map[$Ids[$i]] = $values[$i]
+    }
+
+    return $map
 }
 
 function Get-InstallersForArchitecture {
@@ -270,12 +333,23 @@ function Test-MachineScopeForArchitecture {
 }
 
 function Install-WingetPackage {
-    param([string]$WingetPath, [string]$Id)
+    param(
+        [string]$WingetPath,
+        [string]$Id,
+        [string]$Version
+    )
 
-    Write-Log -Level Info -Message "Running winget install for Id=$Id"
-    $output = & $WingetPath install --id $Id --source winget --scope machine --accept-package-agreements --accept-source-agreements --disable-interactivity 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        $rawOutput = if ($output -is [array]) { $output -join "`n" } else { [string]$output }
+    $argsList = @("install", "--id", $Id, "--source", "winget", "--scope", "machine", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity")
+    if (-not [string]::IsNullOrWhiteSpace($Version)) {
+        Write-Log -Level Info -Message "Running winget install for Id=$Id Version=$Version"
+        $argsList += @("--version", $Version)
+    } else {
+        Write-Log -Level Info -Message "Running winget install for Id=$Id"
+    }
+
+    $result = Invoke-Winget -WingetPath $WingetPath -ArgsList $argsList
+    if ($result.ExitCode -ne 0) {
+        $rawOutput = Convert-WingetOutputToText -Output $result.Output
         $cleanOutput = Normalize-WingetOutput -Output $rawOutput
         if ([string]::IsNullOrWhiteSpace($cleanOutput)) { $cleanOutput = $rawOutput }
 
@@ -286,7 +360,9 @@ function Install-WingetPackage {
 
         if ($alreadyInstalled) {
             Write-Log -Level Warning -Message "winget install indicates already installed or no upgrade available for Id=$Id. Output: $cleanOutput"
-            return
+            return [pscustomobject]@{
+                Status = "AlreadyInstalled"
+            }
         }
 
         Write-Log -Level Error -Message "winget install failed: $cleanOutput"
@@ -294,6 +370,156 @@ function Install-WingetPackage {
     }
 
     Write-Log -Level Info -Message "Install completed successfully"
+    return [pscustomobject]@{
+        Status = "Installed"
+    }
+}
+
+function Convert-WingetPinListToPackagePin {
+    param(
+        [Parameter(Mandatory = $true)][object]$Output,
+        [Parameter(Mandatory = $true)][string]$Id
+    )
+
+    $text = Convert-WingetOutputToText -Output $Output
+    if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+
+    $lines = $text -split "\r?\n"
+    foreach ($line in $lines) {
+        $trim = $line.Trim()
+        if (-not $trim) { continue }
+        if ($trim -match '^(Name|[-]+)\s*$') { continue }
+
+        $parts = $trim -split '\s{2,}'
+        if ($parts.Count -lt 4) { continue }
+
+        $idIndex = [array]::IndexOf($parts, $Id)
+        if ($idIndex -lt 0) { continue }
+        if (($idIndex + 2) -ge $parts.Count) { continue }
+
+        $name = if ($idIndex -gt 0) { ($parts[0..($idIndex - 1)] -join ' ') } else { "" }
+        $version = $parts[$idIndex + 1]
+        $source = $parts[$idIndex + 2]
+        $pinType = if (($idIndex + 3) -lt $parts.Count) { ($parts[($idIndex + 3)..($parts.Count - 1)] -join ' ') } else { "" }
+
+        return [pscustomobject]@{
+            Name = $name
+            Id = $Id
+            Version = $version
+            Source = $source
+            PinType = $pinType
+        }
+    }
+
+    return $null
+}
+
+function Test-WingetPinUnsupported {
+    param([Parameter(Mandatory = $true)][string]$OutputText)
+
+    return (
+        ($OutputText -match '(?i)\bpin\b.+(not recognized|unrecognized|unknown)') -or
+        ($OutputText -match '(?i)(no command named|invalid command).*pin') -or
+        ($OutputText -match '(?i)command line alias .* was not found')
+    )
+}
+
+function Test-WingetNoMatch {
+    param([Parameter(Mandatory = $true)][string]$OutputText)
+
+    return (
+        ($OutputText -match '(?i)no (installed )?package found') -or
+        ($OutputText -match '(?i)no package found matching input criteria') -or
+        ($OutputText -match '(?i)no pinned package found')
+    )
+}
+
+function Get-WingetPackagePin {
+    param(
+        [Parameter(Mandatory = $true)][string]$WingetPath,
+        [Parameter(Mandatory = $true)][string]$Id
+    )
+
+    $result = Invoke-Winget -WingetPath $WingetPath -ArgsList @("pin", "list", "--id", $Id, "--exact", "--accept-source-agreements", "--disable-interactivity")
+    $outputText = Convert-WingetOutputToText -Output $result.Output
+
+    if ($result.ExitCode -ne 0) {
+        if (Test-WingetPinUnsupported -OutputText $outputText) {
+            throw "winget pin commands are not supported by the installed App Installer version"
+        }
+        if (Test-WingetNoMatch -OutputText $outputText) {
+            return $null
+        }
+
+        $cleanOutput = Normalize-WingetOutput -Output $outputText
+        if ([string]::IsNullOrWhiteSpace($cleanOutput)) { $cleanOutput = $outputText }
+        Write-Log -Level Error -Message "winget pin list failed: $cleanOutput"
+        throw "winget pin list failed for Id=$Id"
+    }
+
+    return Convert-WingetPinListToPackagePin -Output $result.Output -Id $Id
+}
+
+function Remove-WingetPackagePin {
+    param(
+        [Parameter(Mandatory = $true)][string]$WingetPath,
+        [Parameter(Mandatory = $true)][string]$Id
+    )
+
+    Write-Log -Level Info -Message "Removing existing pin for Id=$Id"
+    $result = Invoke-Winget -WingetPath $WingetPath -ArgsList @("pin", "remove", "--id", $Id, "--exact", "--accept-source-agreements", "--disable-interactivity")
+    if ($result.ExitCode -ne 0) {
+        $outputText = Convert-WingetOutputToText -Output $result.Output
+        if (Test-WingetPinUnsupported -OutputText $outputText) {
+            throw "winget pin commands are not supported by the installed App Installer version"
+        }
+        if (Test-WingetNoMatch -OutputText $outputText) {
+            return
+        }
+
+        $cleanOutput = Normalize-WingetOutput -Output $outputText
+        if ([string]::IsNullOrWhiteSpace($cleanOutput)) { $cleanOutput = $outputText }
+        Write-Log -Level Error -Message "winget pin remove failed: $cleanOutput"
+        throw "winget pin remove failed for Id=$Id"
+    }
+}
+
+function Set-WingetPackagePin {
+    param(
+        [Parameter(Mandatory = $true)][string]$WingetPath,
+        [Parameter(Mandatory = $true)][string]$Id
+    )
+
+    $existingPin = Get-WingetPackagePin -WingetPath $WingetPath -Id $Id
+    if ($existingPin) {
+        Remove-WingetPackagePin -WingetPath $WingetPath -Id $Id
+    }
+
+    Write-Log -Level Info -Message "Pinning installed version for Id=$Id"
+    $result = Invoke-Winget -WingetPath $WingetPath -ArgsList @("pin", "add", "--id", $Id, "--exact", "--installed", "--accept-source-agreements", "--disable-interactivity")
+    if ($result.ExitCode -ne 0) {
+        $outputText = Convert-WingetOutputToText -Output $result.Output
+        if (Test-WingetPinUnsupported -OutputText $outputText) {
+            throw "winget pin commands are not supported by the installed App Installer version"
+        }
+
+        $cleanOutput = Normalize-WingetOutput -Output $outputText
+        if ([string]::IsNullOrWhiteSpace($cleanOutput)) { $cleanOutput = $outputText }
+        Write-Log -Level Error -Message "winget pin add failed: $cleanOutput"
+        throw "winget pin add failed for Id=$Id"
+    }
+
+    $pin = Get-WingetPackagePin -WingetPath $WingetPath -Id $Id
+    if (-not $pin) {
+        throw "winget pin add completed but no pin entry was found for Id=$Id"
+    }
+
+    Write-Log -Level Info -Message "Pin applied: Version=$($pin.Version) Type=$($pin.PinType)"
+    return [pscustomobject]@{
+        Status = $(if ($existingPin) { "Updated" } else { "Added" })
+        Version = $pin.Version
+        PinType = $pin.PinType
+    }
 }
 
 function Get-StartMenuShortcuts {
@@ -334,32 +560,81 @@ function Set-PublicDesktopShortcut {
     $publicDesktop = "C:\\Users\\Public\\Desktop"
     if (-not (Test-Path $publicDesktop)) {
         Write-Log -Level Warning -Message "Public Desktop not found at $publicDesktop"
-        return
+        return [pscustomobject]@{
+            Status = "PublicDesktopMissing"
+        }
     }
 
     $shortcuts = Get-StartMenuShortcuts
     if (-not $shortcuts -or $shortcuts.Count -eq 0) {
         Write-Log -Level Warning -Message "No Start Menu shortcuts found to copy"
-        return
+        return [pscustomobject]@{
+            Status = "NoStartMenuShortcuts"
+        }
     }
 
     $match = Find-BestShortcut -Shortcuts $shortcuts -Id $Id -InstallStart $InstallStart
     if (-not $match) {
         Write-Log -Level Warning -Message "No suitable Start Menu shortcut found for Id=$Id"
-        return
+        return [pscustomobject]@{
+            Status = "NotFound"
+        }
     }
 
     $dest = Join-Path -Path $publicDesktop -ChildPath $match.Name
     if (Test-Path $dest) {
         Write-Log -Level Info -Message "Public Desktop shortcut already exists: $dest"
-        return
+        return [pscustomobject]@{
+            Status = "AlreadyExists"
+        }
     }
 
     try {
         Copy-Item -Path $match.FullName -Destination $dest -Force
         Write-Log -Level Info -Message "Copied shortcut to Public Desktop: $dest"
+        return [pscustomobject]@{
+            Status = "Copied"
+        }
     } catch {
         Write-Log -Level Warning -Message "Failed to copy shortcut to Public Desktop: $_"
+        return [pscustomobject]@{
+            Status = "CopyFailed"
+        }
+    }
+}
+
+function Format-SummaryValue {
+    param([Parameter(Mandatory = $true)][string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value)) { return "n/a" }
+    return $Value
+}
+
+function Write-ExecutionSummary {
+    param(
+        [Parameter(Mandatory = $true)][object[]]$Results,
+        [Parameter(Mandatory = $true)][int]$SuccessCount,
+        [Parameter(Mandatory = $true)][int]$FailureCount
+    )
+
+    Write-Log -Level Info -Message "Completed. Successes=$SuccessCount Failures=$FailureCount"
+
+    foreach ($result in $Results) {
+        $requestedVersion = if ([string]::IsNullOrWhiteSpace($result.RequestedVersion)) { "latest" } else { $result.RequestedVersion }
+        $pinSummary = $result.PinStatus
+        if (-not [string]::IsNullOrWhiteSpace($result.PinVersion)) {
+            $pinSummary = $pinSummary + ":" + $result.PinVersion
+        }
+        if (-not [string]::IsNullOrWhiteSpace($result.PinType)) {
+            $pinSummary = $pinSummary + ":" + $result.PinType
+        }
+
+        $message = "Summary Id=$($result.Id); RequestedVersion=$requestedVersion; ScopeCheck=$(Format-SummaryValue -Value $result.ScopeCheck); Install=$(Format-SummaryValue -Value $result.InstallStatus); Pin=$(Format-SummaryValue -Value $pinSummary); Shortcut=$(Format-SummaryValue -Value $result.ShortcutStatus)"
+        if (-not [string]::IsNullOrWhiteSpace($result.Error)) {
+            $message = "$message; Error=$($result.Error)"
+        }
+
+        Write-Log -Level Info -Message $message
     }
 }
 
@@ -367,6 +642,12 @@ function Invoke-WingetMachineInstall {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Id,
+
+        [Parameter(Mandatory = $false)]
+        [string]$Version,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$PinInstalledVersion,
 
         [Parameter(Mandatory = $false)]
         [string]$LogPath
@@ -384,11 +665,18 @@ function Invoke-WingetMachineInstall {
     if (-not $ids) {
         throw "No package IDs provided"
     }
+    $versionMap = Get-PerPackageOptionMap -Ids $ids -RawValue $Version -OptionName "Version"
 
     Write-Log -Level Info -Message "Starting winget machine install for Ids=$($ids -join ', ')"
     Write-Log -Level Info -Message "LogPath=$LogPath"
     Write-Log -Level Info -Message "OS=$([System.Environment]::OSVersion.VersionString)"
     Write-Log -Level Info -Message "PowerShell=$($PSVersionTable.PSVersion)"
+    if ($PinInstalledVersion) {
+        Write-Log -Level Info -Message "Installed-version pinning enabled"
+        if ($ids.Count -gt 1) {
+            Write-Log -Level Warning -Message "PinInstalledVersion is intended for single-app runs. A pin will be applied to each package ID provided."
+        }
+    }
 
     $wingetPath = Initialize-Winget
     Write-Log -Level Info -Message "Using winget at $wingetPath"
@@ -398,8 +686,22 @@ function Invoke-WingetMachineInstall {
 
     $successCount = 0
     $failureCount = 0
+    $results = @()
 
     foreach ($pkgId in $ids) {
+        $requestedVersion = if ($versionMap.ContainsKey($pkgId)) { $versionMap[$pkgId] } else { "" }
+        $result = [ordered]@{
+            Id = $pkgId
+            RequestedVersion = $requestedVersion
+            ScopeCheck = "Pending"
+            InstallStatus = "NotAttempted"
+            PinStatus = $(if ($PinInstalledVersion) { "Pending" } else { "NotRequested" })
+            PinVersion = ""
+            PinType = ""
+            ShortcutStatus = "NotAttempted"
+            Error = ""
+        }
+
         Write-Log -Level Info -Message "Processing Id=$pkgId"
 
         try {
@@ -408,32 +710,57 @@ function Invoke-WingetMachineInstall {
 
             if ($pkg -and $pkg.SkipScopeCheck -eq $true) {
                 Write-Log -Level Warning -Message "Skipping machine scope check due to winget show timeout for Id=$pkgId"
+                $result.ScopeCheck = "SkippedTimeout"
             } else {
                 $archInstallers = Get-InstallersForArchitecture -PkgInfo $pkg -Architecture $deviceArch
                 Write-Log -Level Info -Message "Matching installers for ${deviceArch}: $($archInstallers.Count)"
                 if (-not (Test-MachineScopeForArchitecture -PkgInfo $pkg -Architecture $deviceArch)) {
+                    $result.ScopeCheck = "Rejected"
                     Write-Log -Level Error -Message "Package does not support machine scope for architecture $deviceArch"
                     throw "Machine scope not supported for Id=$pkgId on architecture $deviceArch"
                 }
+                $result.ScopeCheck = "Validated"
                 Write-Log -Level Info -Message "Machine scope supported, starting install"
             }
 
-            Install-WingetPackage -WingetPath $wingetPath -Id $pkgId
-            Set-PublicDesktopShortcut -Id $pkgId -InstallStart $installStart
+            $installResult = Install-WingetPackage -WingetPath $wingetPath -Id $pkgId -Version $requestedVersion
+            $result.InstallStatus = $installResult.Status
+
+            $shortcutResult = Set-PublicDesktopShortcut -Id $pkgId -InstallStart $installStart
+            $result.ShortcutStatus = $shortcutResult.Status
+
+            if ($PinInstalledVersion) {
+                $pinResult = Set-WingetPackagePin -WingetPath $wingetPath -Id $pkgId
+                $result.PinStatus = $pinResult.Status
+                $result.PinVersion = $pinResult.Version
+                $result.PinType = $pinResult.PinType
+            }
             Write-Log -Level Info -Message "Id=$pkgId completed successfully"
             $successCount += 1
         } catch {
             $failureCount += 1
+            $result.Error = $_.ToString()
+            if ($result.InstallStatus -eq "NotAttempted") {
+                $result.InstallStatus = "Failed"
+            }
+            if ($PinInstalledVersion -and $result.PinStatus -eq "Pending") {
+                $result.PinStatus = "NotAttempted"
+            }
+            if ($result.ShortcutStatus -eq "NotAttempted") {
+                $result.ShortcutStatus = "NotAttempted"
+            }
             Write-Log -Level Error -Message "Id=$pkgId failed: $_"
         }
+
+        $results += [pscustomobject]$result
     }
 
-    Write-Log -Level Info -Message "Completed. Successes=$successCount Failures=$failureCount"
+    Write-ExecutionSummary -Results $results -SuccessCount $successCount -FailureCount $failureCount
 
     if ($successCount -eq 0) {
         throw "All package installs failed"
     }
 }
 
-Invoke-WingetMachineInstall -Id $Id -LogPath $LogPath
+Invoke-WingetMachineInstall -Id $Id -Version $Version -PinInstalledVersion:$PinInstalledVersion -LogPath $LogPath
 exit 0
