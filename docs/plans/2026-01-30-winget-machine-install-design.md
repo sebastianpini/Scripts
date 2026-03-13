@@ -15,9 +15,8 @@ Build a PowerShell script that installs one or more Winget packages in machine s
 - Already-installed packages: treated as a warning, not a failure.
 
 ## Architecture
-Two PowerShell files under `scripts/powershell/winget-machine-install/`:
-- `winget-machine-install.ps1` — standalone entry point (all functions inlined, RMM-deployable).
-- `winget-machine-install.psm1` — module variant exporting the same functions for testing/reuse.
+One PowerShell file under `scripts/powershell/winget-machine-install/`:
+- `winget-machine-install.ps1` — standalone entry point with all functions inlined for RMM deployment.
 
 Parameters accept environment variable fallbacks (`$env:wingetId`, `$env:architecture`) for RMM tools that inject variables.
 
