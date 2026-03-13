@@ -4,7 +4,7 @@
 
 **Goal:** Build a PowerShell script that installs one or more Winget packages with machine scope under SYSTEM, failing fast if machine scope is unsupported for the device architecture, and logging to temp + stdout/stderr. Copy Start Menu shortcuts to the Public Desktop after install.
 
-**Architecture:** Two-file PowerShell project (`winget-machine-install.ps1` standalone entry point, `winget-machine-install.psm1` module for reuse). All functions inlined in the `.ps1` for single-file RMM deployment. Linear flow per package with per-package error handling, success/failure counting, and architecture-aware scope validation.
+**Architecture:** Single-file PowerShell project (`winget-machine-install.ps1` standalone entry point). All functions are inlined in the `.ps1` for single-file RMM deployment. Linear flow per package with per-package error handling, success/failure counting, and architecture-aware scope validation.
 
 **Tech Stack:** PowerShell 5.1+ (Windows 10/11), winget (App Installer).
 
@@ -553,30 +553,7 @@ git commit -m "feat: multi-package orchestration with per-package error handling
 
 ---
 
-### Task 9: Create module variant
-
-**Files:**
-- Create: `scripts/powershell/winget-machine-install/winget-machine-install.psm1`
-
-**Step 1: Create module with exported functions**
-
-Copy all helper functions into the module. Key differences from `.ps1`:
-- No `param()` block or script header.
-- `Initialize-Winget` is named `Ensure-Winget` in the module.
-- Uses a simpler `Invoke-Winget` (direct call, no timeout) instead of `Invoke-WingetWithTimeout`.
-- `Get-WingetPackageInfo` tries `--output json` first, falls back to text parsing.
-- `Export-ModuleMember` exports all public functions.
-
-**Step 2: Commit**
-
-```bash
-git add scripts/powershell/winget-machine-install/winget-machine-install.psm1
-git commit -m "feat: add module variant for testing and reuse"
-```
-
----
-
-### Task 10: Manual validation and polish
+### Task 9: Manual validation and polish
 
 **Verification scenarios:**
 1. Single package, machine scope supported → installs successfully.
