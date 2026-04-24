@@ -1,1 +1,7 @@
 .worktrees/
+.DS_Store
+.claude
+.vscode/
+.do_not_push/
+.pycache/
+__pycache__/

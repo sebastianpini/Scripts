@@ -1,0 +1,5 @@
+{
+  "extraPaths": [
+    "scripts/python/_shared"
+  ]
+}
