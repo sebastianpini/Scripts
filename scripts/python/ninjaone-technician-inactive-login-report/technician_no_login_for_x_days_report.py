@@ -5,27 +5,24 @@ cutoff date, including name, email, admin status, roles, and last platform
 login before that cutoff.
 
 Environment variables:
-- NINJA_ONE_INSTANCE (required), e.g. eu.ninjarmm.com
 - NINJA_ONE_CLIENT_ID (required)
 - NINJA_ONE_CLIENT_SECRET (required)
+- NINJA_ONE_INSTANCE (optional, defaults to "eu.ninjarmm.com")
 - NINJA_ONE_SCOPE (optional, defaults to "monitoring management")
 """
 
 import argparse
-import json
-import os
-import ssl
 import sys
-import urllib.error
-import urllib.parse
-import urllib.request
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from urllib.parse import urlencode
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_shared"))
+from ninja_api import get_access_token, get_api_resource
 
 
 LOGIN_STATUS = "APP_USER_LOGGED_IN"
 PAGE_SIZE = 1000
-DEFAULT_SCOPE = "monitoring management"
 
 
 def parse_args():
@@ -47,68 +44,6 @@ def parse_args():
         help="Include disabled technicians in the inactive list.",
     )
     return parser.parse_args()
-
-
-def require_env(name, default=None):
-    value = os.getenv(name, default)
-    if value:
-        return value
-    raise RuntimeError(f"Missing required environment variable: {name}")
-
-
-def request_json(url, method="GET", headers=None, form_body=None):
-    body = None
-    request_headers = headers.copy() if headers else {}
-
-    if form_body is not None:
-        body = urllib.parse.urlencode(form_body).encode("utf-8")
-        request_headers["Content-Type"] = "application/x-www-form-urlencoded"
-
-    request = urllib.request.Request(url, data=body, headers=request_headers, method=method)
-    context = ssl.create_default_context()
-
-    try:
-        with urllib.request.urlopen(request, context=context) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        error_body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"HTTP {exc.code} {exc.reason}: {error_body}") from exc
-
-
-def get_access_token():
-    instance = require_env("NINJA_ONE_INSTANCE")
-    client_id = require_env("NINJA_ONE_CLIENT_ID")
-    client_secret = require_env("NINJA_ONE_CLIENT_SECRET")
-    scope = require_env("NINJA_ONE_SCOPE", DEFAULT_SCOPE)
-
-    auth_response = request_json(
-        f"https://{instance}/oauth/token",
-        method="POST",
-        headers={"Accept": "application/json"},
-        form_body={
-            "grant_type": "client_credentials",
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "scope": scope,
-        },
-    )
-
-    access_token = auth_response.get("access_token")
-    if not access_token:
-        raise RuntimeError("OAuth response did not contain an access token.")
-
-    return access_token
-
-
-def get_api_resource(path, access_token):
-    instance = require_env("NINJA_ONE_INSTANCE")
-    return request_json(
-        f"https://{instance}{path}",
-        headers={
-            "Accept": "application/json",
-            "Authorization": f"Bearer {access_token}",
-        },
-    )
 
 
 def technician_name(user):
@@ -253,6 +188,7 @@ def build_rows(technicians, inactive_user_ids, latest_login_by_user_id):
             {
                 "Name": technician_name(user),
                 "Email": user.get("email", ""),
+                "Enabled": "Yes" if user.get("enabled") else "No",
                 "Admin": "Yes" if user.get("administrator") else "No",
                 "Roles": ", ".join(roles) if roles else "(none)",
                 "Last Login": format_last_login(latest_login_by_user_id.get(user_id)),
@@ -263,7 +199,7 @@ def build_rows(technicians, inactive_user_ids, latest_login_by_user_id):
 
 
 def print_table(rows):
-    columns = ["Name", "Email", "Admin", "Roles", "Last Login"]
+    columns = ["Name", "Email", "Enabled", "Admin", "Roles", "Last Login"]
 
     if not rows:
         print("No inactive technicians matched the report criteria.")

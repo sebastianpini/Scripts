@@ -5,27 +5,24 @@ login activity, including name, email, enabled status, admin status, roles,
 and last login timestamp.
 
 Environment variables:
-- NINJA_ONE_INSTANCE (required), e.g. eu.ninjarmm.com
 - NINJA_ONE_CLIENT_ID (required)
 - NINJA_ONE_CLIENT_SECRET (required)
+- NINJA_ONE_INSTANCE (optional, defaults to "eu.ninjarmm.com")
 - NINJA_ONE_SCOPE (optional, defaults to "monitoring management")
 """
 
 import argparse
-import json
-import os
-import ssl
 import sys
-import urllib.error
-import urllib.parse
-import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import urlencode
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_shared"))
+from ninja_api import get_access_token, get_api_resource
 
 
 LOGIN_STATUS = "APP_USER_LOGGED_IN"
 PAGE_SIZE = 1000
-DEFAULT_SCOPE = "monitoring management"
 
 
 def parse_args():
@@ -41,68 +38,6 @@ def parse_args():
         help="Only include enabled technicians.",
     )
     return parser.parse_args()
-
-
-def require_env(name, default=None):
-    value = os.getenv(name, default)
-    if value:
-        return value
-    raise RuntimeError(f"Missing required environment variable: {name}")
-
-
-def request_json(url, method="GET", headers=None, form_body=None):
-    body = None
-    request_headers = headers.copy() if headers else {}
-
-    if form_body is not None:
-        body = urllib.parse.urlencode(form_body).encode("utf-8")
-        request_headers["Content-Type"] = "application/x-www-form-urlencoded"
-
-    request = urllib.request.Request(url, data=body, headers=request_headers, method=method)
-    context = ssl.create_default_context()
-
-    try:
-        with urllib.request.urlopen(request, context=context) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        error_body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"HTTP {exc.code} {exc.reason}: {error_body}") from exc
-
-
-def get_access_token():
-    instance = require_env("NINJA_ONE_INSTANCE")
-    client_id = require_env("NINJA_ONE_CLIENT_ID")
-    client_secret = require_env("NINJA_ONE_CLIENT_SECRET")
-    scope = require_env("NINJA_ONE_SCOPE", DEFAULT_SCOPE)
-
-    auth_response = request_json(
-        f"https://{instance}/oauth/token",
-        method="POST",
-        headers={"Accept": "application/json"},
-        form_body={
-            "grant_type": "client_credentials",
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "scope": scope,
-        },
-    )
-
-    access_token = auth_response.get("access_token")
-    if not access_token:
-        raise RuntimeError("OAuth response did not contain an access token.")
-
-    return access_token
-
-
-def get_api_resource(path, access_token):
-    instance = require_env("NINJA_ONE_INSTANCE")
-    return request_json(
-        f"https://{instance}{path}",
-        headers={
-            "Accept": "application/json",
-            "Authorization": f"Bearer {access_token}",
-        },
-    )
 
 
 def technician_name(user):
