@@ -21,3 +21,11 @@ Lists NinjaOne technicians who have not logged into the Ninja platform during th
 - Path: `scripts/python/ninjaone-technician-inactive-login-report/`
 - Usage: `python3 scripts/python/ninjaone-technician-inactive-login-report/technician_inactive_login_report.py --days 14`
 - Prereqs: Python 3, NinjaOne OAuth client credentials via `NINJA_ONE_INSTANCE`, `NINJA_ONE_CLIENT_ID`, and `NINJA_ONE_CLIENT_SECRET`
+
+### NinjaOne technician last login report
+Lists NinjaOne technicians sorted descending by latest platform login activity.
+
+- Language: Python
+- Path: `scripts/python/ninjaone-technician-inactive-login-report/`
+- Usage: `python3 scripts/python/ninjaone-technician-inactive-login-report/technician_last_login_report.py`
+- Prereqs: Python 3, NinjaOne OAuth client credentials via `NINJA_ONE_INSTANCE`, `NINJA_ONE_CLIENT_ID`, and `NINJA_ONE_CLIENT_SECRET`
