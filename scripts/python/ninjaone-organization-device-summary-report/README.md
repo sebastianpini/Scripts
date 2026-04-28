@@ -34,3 +34,6 @@ Name              TotalDevices Workstations Servers AppleDevices AndroidDevices 
 ----------------- ------------ ------------ ------- ------------ -------------- -------------- -------- ------------------
 Example Org       58           42           7       4            2              3              51       128.45
 ```
+
+## No Liability / No Warranty
+This script is provided as-is, without warranty of any kind, express or implied. Use it at your own risk and validate it in a safe test environment before using it in production. The author and contributors are not liable for any damages, data loss, service disruption, security issue, or other consequence resulting from use, misuse, or inability to use this script.

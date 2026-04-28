@@ -32,3 +32,6 @@ powershell.exe -ExecutionPolicy Bypass -File .\winget-machine-install.ps1 -Id "M
 5) Invalid ID; script fails with clear error.
 6) `-Version` installs the requested version and end summary reports install/shortcut outcomes.
 7) Logs appear in temp and stdout/stderr.
+
+## No Liability / No Warranty
+This script is provided as-is, without warranty of any kind, express or implied. Use it at your own risk and validate it in a safe test environment before using it in production. The author and contributors are not liable for any damages, data loss, service disruption, security issue, or other consequence resulting from use, misuse, or inability to use this script.

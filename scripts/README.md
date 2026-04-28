@@ -43,3 +43,6 @@ Provides common NinjaOne OAuth and JSON request helpers used by the Python Ninja
 
 - Language: Python
 - Path: `scripts/python/_shared/ninja_api.py`
+
+## No Liability / No Warranty
+These scripts are provided as-is, without warranty of any kind, express or implied. Use them at your own risk and validate them in a safe test environment before using them in production. The author and contributors are not liable for any damages, data loss, service disruption, security issue, or other consequence resulting from use, misuse, or inability to use these scripts.
