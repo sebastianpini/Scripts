@@ -2,6 +2,58 @@
 
 A curated list of useful scripts in this repo. For full details, see each script's README in its folder.
 
+## Environment Files
+
+Store local NinjaOne credentials in gitignored env files under `env/`.
+
+Create one file per environment from the committed template:
+
+```bash
+cp env/example.env env/internal-testing.env
+cp env/example.env env/demo-eu.env
+cp env/example.env env/demo-ca.env
+```
+
+Fill each file with that environment's values. The scripts expect the same variable names in every file:
+
+```bash
+NINJA_ONE_INSTANCE=eu.ninjarmm.com
+NINJA_ONE_CLIENT_ID=
+NINJA_ONE_CLIENT_SECRET=
+NINJA_ONE_SCOPE="monitoring management"
+```
+
+For NinjaOne scripts, use the short launcher:
+
+```bash
+./ninja eu last-login
+./ninja ca org-summary
+./ninja it no-login --days 14
+```
+
+The launcher supports these environment aliases:
+
+```text
+internal-testing, internal, it
+demo-eu, eu
+demo-ca, ca
+```
+
+And these script names:
+
+```text
+last-login
+no-login
+org-summary
+```
+
+You can also run any command with a specific environment:
+
+```bash
+./run-with-env.sh demo-eu python3 scripts/python/ninjaone-technician-inactive-login-report/technician_last_login_report.py
+./run-with-env.sh demo-ca python3 scripts/python/ninjaone-organization-device-summary-report/organization_device_summary_report.py
+```
+
 ## PowerShell
 
 ### Winget machine install

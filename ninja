@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ./ninja <env> <script> [args...]
+  ./ninja envs
+  ./ninja scripts
+
+Environments:
+  internal-testing, internal, it
+  demo-eu, eu
+  demo-ca, ca
+
+Scripts:
+  last-login     Technician last login report
+  no-login       Technicians with no login for N days
+  org-summary    Organization device summary report
+
+Examples:
+  ./ninja eu last-login
+  ./ninja ca org-summary
+  ./ninja it no-login --days 14
+EOF
+}
+
+list_envs() {
+  find "$ROOT_DIR/env" -maxdepth 1 -type f -name '*.env' ! -name 'example.env' -exec basename {} .env \; | sort
+}
+
+list_scripts() {
+  cat <<'EOF'
+last-login
+no-login
+org-summary
+EOF
+}
+
+resolve_env() {
+  case "$1" in
+    internal-testing | internal | it)
+      echo "internal-testing"
+      ;;
+    demo-eu | eu)
+      echo "demo-eu"
+      ;;
+    demo-ca | ca)
+      echo "demo-ca"
+      ;;
+    *)
+      echo "$1"
+      ;;
+  esac
+}
+
+resolve_script() {
+  case "$1" in
+    last-login)
+      echo "scripts/python/ninjaone-technician-inactive-login-report/technician_last_login_report.py"
+      ;;
+    no-login)
+      echo "scripts/python/ninjaone-technician-inactive-login-report/technician_no_login_for_x_days_report.py"
+      ;;
+    org-summary)
+      echo "scripts/python/ninjaone-organization-device-summary-report/organization_device_summary_report.py"
+      ;;
+    *)
+      echo ""
+      ;;
+  esac
+}
+
+if [[ $# -eq 0 ]]; then
+  usage
+  exit 1
+fi
+
+case "$1" in
+  -h | --help | help)
+    usage
+    exit 0
+    ;;
+  envs)
+    list_envs
+    exit 0
+    ;;
+  scripts)
+    list_scripts
+    exit 0
+    ;;
+esac
+
+if [[ $# -lt 2 ]]; then
+  usage
+  exit 1
+fi
+
+ENV_NAME="$(resolve_env "$1")"
+SCRIPT_NAME="$2"
+shift 2
+
+SCRIPT_PATH="$(resolve_script "$SCRIPT_NAME")"
+
+if [[ -z "$SCRIPT_PATH" ]]; then
+  echo "Unknown script: $SCRIPT_NAME"
+  echo
+  echo "Available scripts:"
+  list_scripts
+  exit 1
+fi
+
+cd "$ROOT_DIR"
+exec ./run-with-env.sh "$ENV_NAME" python3 "$SCRIPT_PATH" "$@"
