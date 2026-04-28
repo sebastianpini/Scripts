@@ -5,3 +5,5 @@
 .do_not_push/
 .pycache/
 __pycache__/
+env/*.env
+!env/example.env
