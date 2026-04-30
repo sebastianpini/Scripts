@@ -3,14 +3,21 @@
 Reports NinjaOne organization counts for workstations, servers, Apple mobile devices, Android devices, network devices, total devices, end users, and used cloud backup storage.
 
 ## Usage
+Store NinjaOne credentials in `env/default.env` as described in the repository root README. Then run from the repository root:
+
 ```bash
-export NINJA_ONE_INSTANCE="eu.ninjarmm.com"
-export NINJA_ONE_CLIENT_ID="your-client-id"
-export NINJA_ONE_CLIENT_SECRET="your-client-secret"
-python3 ./organization_device_summary_report.py
+./ninja org-summary
+```
+
+For multiple environments, pass the environment name before the script name:
+
+```bash
+./ninja demo-eu org-summary
 ```
 
 ## Environment variables
+These variables belong in `env/default.env` or another selected `env/*.env` file, not in `~/.zshrc` or copied into the shell before every run.
+
 - `NINJA_ONE_CLIENT_ID` (required): OAuth client ID.
 - `NINJA_ONE_CLIENT_SECRET` (required): OAuth client secret.
 - `NINJA_ONE_INSTANCE` (optional): NinjaOne instance hostname. Defaults to `eu.ninjarmm.com`.

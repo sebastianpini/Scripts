@@ -6,6 +6,8 @@ Reusable Python modules used by scripts in sibling folders.
 `ninja_api.py` provides common NinjaOne OAuth and JSON request helpers for the NinjaOne reports.
 
 ### Environment variables
+The NinjaOne launcher loads these from `env/default.env` for customer usage, or from another selected `env/*.env` file for multi-environment testing.
+
 - `NINJA_ONE_CLIENT_ID` (required): OAuth client ID.
 - `NINJA_ONE_CLIENT_SECRET` (required): OAuth client secret.
 - `NINJA_ONE_INSTANCE` (optional): NinjaOne instance hostname. Defaults to `eu.ninjarmm.com`.

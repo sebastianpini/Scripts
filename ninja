@@ -6,11 +6,16 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 usage() {
   cat <<'EOF'
 Usage:
+  ./ninja <script> [args...]
   ./ninja <env> <script> [args...]
   ./ninja envs
   ./ninja scripts
 
+Default customer setup:
+  Create env/default.env, then run scripts without an environment argument.
+
 Environments:
+  default
   internal-testing, internal, it
   demo-eu, eu
   demo-ca, ca
@@ -21,6 +26,9 @@ Scripts:
   org-summary    Organization device summary report
 
 Examples:
+  ./ninja last-login
+  ./ninja org-summary
+  ./ninja no-login --days 14
   ./ninja eu last-login
   ./ninja ca org-summary
   ./ninja it no-login --days 14
@@ -93,14 +101,20 @@ case "$1" in
     ;;
 esac
 
-if [[ $# -lt 2 ]]; then
-  usage
-  exit 1
-fi
+if [[ -n "$(resolve_script "$1")" ]]; then
+  ENV_NAME="default"
+  SCRIPT_NAME="$1"
+  shift
+else
+  if [[ $# -lt 2 ]]; then
+    usage
+    exit 1
+  fi
 
-ENV_NAME="$(resolve_env "$1")"
-SCRIPT_NAME="$2"
-shift 2
+  ENV_NAME="$(resolve_env "$1")"
+  SCRIPT_NAME="$2"
+  shift 2
+fi
 
 SCRIPT_PATH="$(resolve_script "$SCRIPT_NAME")"
 

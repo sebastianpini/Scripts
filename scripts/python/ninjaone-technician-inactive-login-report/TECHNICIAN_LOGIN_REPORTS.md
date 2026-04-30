@@ -6,30 +6,36 @@ Reports for NinjaOne technician platform login activity.
 Lists NinjaOne technicians who have not logged into the Ninja platform during the last N full days, using local midnight as the cutoff boundary.
 
 ### Usage
+Store NinjaOne credentials in `env/default.env` as described in the repository root README. Then run from the repository root:
+
 ```bash
-export NINJA_ONE_INSTANCE="eu.ninjarmm.com"
-export NINJA_ONE_CLIENT_ID="your-client-id"
-export NINJA_ONE_CLIENT_SECRET="your-client-secret"
-python3 ./technician_no_login_for_x_days_report.py --days 14
+./ninja no-login --days 14
 ```
 
 ## Last login report
 Lists every NinjaOne technician sorted descending by their latest `APP_USER_LOGGED_IN` activity. Technicians with no login activity are shown as `(never)` at the bottom.
 
 ### Usage
+Store NinjaOne credentials in `env/default.env` as described in the repository root README. Then run from the repository root:
+
 ```bash
-export NINJA_ONE_INSTANCE="eu.ninjarmm.com"
-export NINJA_ONE_CLIENT_ID="your-client-id"
-export NINJA_ONE_CLIENT_SECRET="your-client-secret"
-python3 ./technician_last_login_report.py
+./ninja last-login
 ```
 
 Use `--enabled-only` to exclude disabled technicians:
 ```bash
-python3 ./technician_last_login_report.py --enabled-only
+./ninja last-login --enabled-only
+```
+
+For multiple environments, pass the environment name before the script name:
+
+```bash
+./ninja demo-eu last-login
 ```
 
 ## Environment variables
+These variables belong in `env/default.env` or another selected `env/*.env` file, not in `~/.zshrc` or copied into the shell before every run.
+
 - `NINJA_ONE_CLIENT_ID` (required): OAuth client ID.
 - `NINJA_ONE_CLIENT_SECRET` (required): OAuth client secret.
 - `NINJA_ONE_INSTANCE` (optional): NinjaOne instance hostname. Defaults to `eu.ninjarmm.com`.
