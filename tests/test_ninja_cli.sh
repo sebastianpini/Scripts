@@ -30,10 +30,10 @@ run_successfully() {
   printf '%s\n' "$output"
 }
 
-mkdir -p "$TMP_DIR/env" "$TMP_DIR/bin"
+mkdir -p "$TMP_DIR/env" "$TMP_DIR/bin" "$TMP_DIR/lib"
 cp "$ROOT_DIR/ninja" "$TMP_DIR/ninja"
-cp "$ROOT_DIR/run-with-env.sh" "$TMP_DIR/run-with-env.sh"
-chmod +x "$TMP_DIR/ninja" "$TMP_DIR/run-with-env.sh"
+cp "$ROOT_DIR/lib/run-with-env.sh" "$TMP_DIR/lib/run-with-env.sh"
+chmod +x "$TMP_DIR/ninja" "$TMP_DIR/lib/run-with-env.sh"
 
 cat > "$TMP_DIR/env/default.env" <<'EOF'
 NINJA_ONE_INSTANCE=default.example.test
@@ -61,12 +61,12 @@ chmod +x "$TMP_DIR/bin/python3"
 
 DEFAULT_OUTPUT="$(PATH="$TMP_DIR/bin:$PATH" run_successfully "$TMP_DIR/ninja" last-login --enabled-only)"
 assert_contains "$DEFAULT_OUTPUT" "instance=default.example.test"
-assert_contains "$DEFAULT_OUTPUT" "script=scripts/python/ninjaone-technician-inactive-login-report/technician_last_login_report.py"
+assert_contains "$DEFAULT_OUTPUT" "script=python/user/last_login.py"
 assert_contains "$DEFAULT_OUTPUT" "args=--enabled-only"
 
 EXPLICIT_OUTPUT="$(PATH="$TMP_DIR/bin:$PATH" run_successfully "$TMP_DIR/ninja" demo-eu org-summary)"
 assert_contains "$EXPLICIT_OUTPUT" "instance=demo-eu.example.test"
-assert_contains "$EXPLICIT_OUTPUT" "script=scripts/python/ninjaone-organization-device-summary-report/organization_device_summary_report.py"
+assert_contains "$EXPLICIT_OUTPUT" "script=python/organization/overview.py"
 
 HELP_OUTPUT="$(run_successfully "$TMP_DIR/ninja" help)"
 assert_contains "$HELP_OUTPUT" "./ninja <script> [args...]"
@@ -74,5 +74,5 @@ assert_contains "$HELP_OUTPUT" "./ninja <env> <script> [args...]"
 assert_contains "$HELP_OUTPUT" "owner-devices"
 
 OWNER_OUTPUT="$(PATH="$TMP_DIR/bin:$PATH" run_successfully "$TMP_DIR/ninja" owner-devices --help)"
-assert_contains "$OWNER_OUTPUT" "script=scripts/python/ninjaone-device-owner-assignment/assign_device_owner.py"
+assert_contains "$OWNER_OUTPUT" "script=python/device/assign_owner.py"
 assert_contains "$OWNER_OUTPUT" "args=--help"

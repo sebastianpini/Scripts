@@ -55,7 +55,7 @@ That folder is gitignored. Treat this file like a password because the
 refresh token can mint new access tokens until it expires or is revoked.
 
 The logic is intentionally kept in the `Delegated OAuth token cache` section
-of `assign_device_owner.py`:
+of `assign_owner.py`:
 
 1. If the cached access token is still valid, reuse it.
 2. If the access token expired and a refresh token is cached, call

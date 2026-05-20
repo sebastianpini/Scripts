@@ -12,75 +12,50 @@ Usage:
   ./ninja scripts
 
 Default customer setup:
-  Create env/default.env, then run scripts without an environment argument.
+  Fill in env/default.env, then run scripts without an environment argument.
 
 Environments:
   default
-  internal-testing, internal, it
-  demo-eu, eu
-  demo-ca, ca
+  demo1
+  demo2
 
 Scripts:
-  last-login     Technician last login report
-  no-login       Technicians with no login for N days
-  org-summary    Organization device summary report
-  owner-devices  Assign all device owners to a technician
+  last-login     python/user/last_login.py         Technician last login report
+  org-summary    python/organization/overview.py   Organization device summary report
+  owner-devices  python/device/assign_owner.py     Assign all device owners to a technician
 
 Examples:
   ./ninja last-login
   ./ninja org-summary
-  ./ninja no-login --days 14
   ./ninja owner-devices
   ./ninja owner-devices --apply
-  ./ninja eu last-login
-  ./ninja ca org-summary
-  ./ninja it no-login --days 14
+  ./ninja demo1 last-login
+  ./ninja demo2 org-summary
 EOF
 }
 
 list_envs() {
-  find "$ROOT_DIR/env" -maxdepth 1 -type f -name '*.env' ! -name 'example.env' -exec basename {} .env \; | sort
+  find "$ROOT_DIR/env" -maxdepth 1 -type f -name '*.env' -exec basename {} .env \; | sort
 }
 
 list_scripts() {
   cat <<'EOF'
 last-login
-no-login
 org-summary
 owner-devices
 EOF
 }
 
-resolve_env() {
-  case "$1" in
-    internal-testing | internal | it)
-      echo "internal-testing"
-      ;;
-    demo-eu | eu)
-      echo "demo-eu"
-      ;;
-    demo-ca | ca)
-      echo "demo-ca"
-      ;;
-    *)
-      echo "$1"
-      ;;
-  esac
-}
-
 resolve_script() {
   case "$1" in
     last-login)
-      echo "scripts/python/ninjaone-technician-inactive-login-report/technician_last_login_report.py"
-      ;;
-    no-login)
-      echo "scripts/python/ninjaone-technician-inactive-login-report/technician_no_login_for_x_days_report.py"
+      echo "python/user/last_login.py"
       ;;
     org-summary)
-      echo "scripts/python/ninjaone-organization-device-summary-report/organization_device_summary_report.py"
+      echo "python/organization/overview.py"
       ;;
     owner-devices)
-      echo "scripts/python/ninjaone-device-owner-assignment/assign_device_owner.py"
+      echo "python/device/assign_owner.py"
       ;;
     *)
       echo ""
@@ -118,7 +93,7 @@ else
     exit 1
   fi
 
-  ENV_NAME="$(resolve_env "$1")"
+  ENV_NAME="$1"
   SCRIPT_NAME="$2"
   shift 2
 fi
@@ -134,4 +109,4 @@ if [[ -z "$SCRIPT_PATH" ]]; then
 fi
 
 cd "$ROOT_DIR"
-exec ./run-with-env.sh "$ENV_NAME" python3 "$SCRIPT_PATH" "$@"
+exec ./lib/run-with-env.sh "$ENV_NAME" python3 "$SCRIPT_PATH" "$@"

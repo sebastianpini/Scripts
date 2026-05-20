@@ -47,11 +47,11 @@ NINJA_ONE_AUTH_CODE_SCOPE = os.getenv("NINJA_ONE_AUTH_CODE_SCOPE", DEFAULT_AUTH_
 NINJA_ONE_REDIRECT_URI = os.getenv(
     "NINJA_ONE_REDIRECT_URI", "http://localhost:8080/"
 )
-ROOT_DIR = Path(__file__).resolve().parents[3]
+ROOT_DIR = Path(__file__).resolve().parents[2]
 NINJA_ONE_TOKEN_CACHE = Path(
     os.getenv(
         "NINJA_ONE_TOKEN_CACHE",
-        str(ROOT_DIR / ".do_not_push" / "ninjaone-device-owner-token-cache.json"),
+        str(ROOT_DIR / ".do_not_push" / "token.json"),
     )
 )
 

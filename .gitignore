@@ -6,4 +6,4 @@
 .pycache/
 __pycache__/
 env/*.env
-!env/example.env
+!env/rename_to_default.env
