@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
-[Version 1.0.0] Report NinjaOne technicians sorted by most recent platform
+[Version 2.0.0] Report NinjaOne users sorted by most recent platform
 login activity, including name, email, enabled status, admin status, roles,
-and last login timestamp.
+and last login timestamp. Supports technicians, end users, or both via
+--user-type, and optional CSV export via --csv.
 
 Environment variables:
 - NINJA_ONE_CLIENT_ID (required)
 - NINJA_ONE_CLIENT_SECRET (required)
 - NINJA_ONE_INSTANCE (optional, defaults to "eu.ninjarmm.com")
 - NINJA_ONE_SCOPE (optional, defaults to "monitoring management")
+
 """
 
 import argparse
+import csv
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,32 +24,44 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_shared"))
 from ninja_api import get_access_token, get_api_resource
 
 
-LOGIN_STATUS = "APP_USER_LOGGED_IN"
+TECHNICIAN_LOGIN_STATUS = "APP_USER_LOGGED_IN"
+END_USER_LOGIN_STATUS = "END_USER_LOGGED_IN"
 PAGE_SIZE = 1000
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
-            "List NinjaOne technicians sorted by most recent Ninja platform "
+            "List NinjaOne users sorted by most recent Ninja platform "
             "login activity."
         )
     )
     parser.add_argument(
+        "--user-type",
+        choices=["technician", "enduser", "all"],
+        default="technician",
+        help="User type to include (default: technician).",
+    )
+    parser.add_argument(
         "--enabled-only",
         action="store_true",
-        help="Only include enabled technicians.",
+        help="Only include enabled users.",
+    )
+    parser.add_argument(
+        "--csv",
+        metavar="PATH",
+        help="Write results to a CSV file at PATH.",
     )
     return parser.parse_args()
 
 
-def technician_name(user):
+def user_display_name(user):
     first_name = (user.get("firstName") or "").strip()
     last_name = (user.get("lastName") or "").strip()
     full_name = f"{first_name} {last_name}".strip()
     if full_name:
         return full_name
-    return user.get("email") or f"Technician #{user.get('id', 'unknown')}"
+    return user.get("email") or f"User #{user.get('id', 'unknown')}"
 
 
 def normalize_epoch(value):
@@ -59,32 +74,38 @@ def normalize_epoch(value):
     return timestamp
 
 
-def load_technicians(access_token, enabled_only):
-    users = get_api_resource("/v2/users?userType=TECHNICIAN&includeRoles=true", access_token)
-    technicians = {}
+def load_users(access_token, user_type, enabled_only):
+    if user_type == "all":
+        raw = (
+            get_api_resource("/v2/users?userType=TECHNICIAN&includeRoles=true", access_token)
+            + get_api_resource("/v2/users?userType=END_USER&includeRoles=true", access_token)
+        )
+    elif user_type == "enduser":
+        raw = get_api_resource("/v2/users?userType=END_USER&includeRoles=true", access_token)
+    else:
+        raw = get_api_resource("/v2/users?userType=TECHNICIAN&includeRoles=true", access_token)
 
-    for user in users:
+    users = {}
+    for user in raw:
         if enabled_only and not user.get("enabled", False):
             continue
-
         user_id = user.get("id")
         if user_id is None:
             continue
+        users[user_id] = user
 
-        technicians[user_id] = user
-
-    return technicians
+    return users
 
 
-def fetch_last_login_by_user_id(access_token, technician_ids):
+def fetch_last_login_by_user_id(access_token, user_ids, login_status):
     last_login_by_user_id = {}
-    remaining_user_ids = set(technician_ids)
+    remaining_user_ids = set(user_ids)
     older_than = None
 
     while remaining_user_ids:
         params = {
             "class": "USER",
-            "status": LOGIN_STATUS,
+            "status": login_status,
             "pageSize": PAGE_SIZE,
         }
         if older_than is not None:
@@ -137,7 +158,7 @@ def build_rows(technicians, last_login_by_user_id):
         last_login = last_login_by_user_id.get(user_id)
         rows.append(
             {
-                "Name": technician_name(user),
+                "Name": user_display_name(user),
                 "Email": user.get("email", ""),
                 "Enabled": "Yes" if user.get("enabled") else "No",
                 "Admin": "Yes" if user.get("administrator") else "No",
@@ -157,7 +178,7 @@ def print_table(rows):
     columns = ["Name", "Email", "Enabled", "Admin", "Roles", "Last Login"]
 
     if not rows:
-        print("No technicians returned.")
+        print("No users returned.")
         return
 
     widths = {column: len(column) for column in columns}
@@ -171,24 +192,65 @@ def print_table(rows):
         print(" ".join(str(row[column]).ljust(widths[column]) for column in columns))
 
 
+def write_csv(rows, path):
+    columns = ["Name", "Email", "Enabled", "Admin", "Roles", "Last Login"]
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 def main():
     args = parse_args()
 
+    if args.user_type in ("enduser", "all"):
+        print(
+            "Warning: end user activity scan may be slow with large user counts.",
+            file=sys.stderr,
+        )
+
     try:
         access_token = get_access_token()
-        technicians = load_technicians(access_token, args.enabled_only)
-        last_login_by_user_id = fetch_last_login_by_user_id(
-            access_token, set(technicians)
-        )
+        users = load_users(access_token, args.user_type, args.enabled_only)
+        if args.user_type == "all":
+            # Relies on userType field from /v2/users API; users missing it get no login lookup.
+            tech_ids = {uid for uid, u in users.items() if u.get("userType") == "TECHNICIAN"}
+            enduser_ids = {uid for uid, u in users.items() if u.get("userType") == "END_USER"}
+            unclassified = set(users) - tech_ids - enduser_ids
+            if unclassified:
+                print(
+                    f"Warning: {len(unclassified)} user(s) have no userType and will show as (never).",
+                    file=sys.stderr,
+                )
+            last_login_by_user_id = {
+                **fetch_last_login_by_user_id(access_token, tech_ids, TECHNICIAN_LOGIN_STATUS),
+                **fetch_last_login_by_user_id(access_token, enduser_ids, END_USER_LOGIN_STATUS),
+            }
+        elif args.user_type == "enduser":
+            last_login_by_user_id = fetch_last_login_by_user_id(
+                access_token, set(users), END_USER_LOGIN_STATUS
+            )
+        else:
+            last_login_by_user_id = fetch_last_login_by_user_id(
+                access_token, set(users), TECHNICIAN_LOGIN_STATUS
+            )
     except Exception as exc:  # noqa: BLE001
         print(f"Failed to query NinjaOne API: {exc}", file=sys.stderr)
         return 1
 
-    rows = build_rows(technicians, last_login_by_user_id)
-    scope = "enabled technicians" if args.enabled_only else "all technicians"
-    print(f"Technician last login report for {scope}: {len(rows)}")
+    _scope_labels = {
+        "technician": "technicians",
+        "enduser": "end users",
+        "all": "technicians and end users",
+    }
+    scope = ("enabled " if args.enabled_only else "") + _scope_labels[args.user_type]
+    rows = build_rows(users, last_login_by_user_id)
+    print(f"Login report for {scope}: {len(rows)}")
     print_table(rows)
     print(f"Total: {len(rows)}")
+    if args.csv:
+        write_csv(rows, args.csv)
+        print(f"Wrote {len(rows)} rows to {args.csv}")
     return 0
 
 

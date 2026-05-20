@@ -13,7 +13,7 @@ Store NinjaOne credentials in `env/default.env` as described in the repository r
 ```
 
 ## Last login report
-Lists every NinjaOne technician sorted descending by their latest `APP_USER_LOGGED_IN` activity. Technicians with no login activity are shown as `(never)` at the bottom.
+Lists every NinjaOne user sorted descending by their latest login activity. Users with no login activity are shown as `(never)` at the bottom.
 
 ### Usage
 Store NinjaOne credentials in `env/default.env` as described in the repository root README. Then run from the repository root:
@@ -22,9 +22,21 @@ Store NinjaOne credentials in `env/default.env` as described in the repository r
 ./ninja last-login
 ```
 
-Use `--enabled-only` to exclude disabled technicians:
+Use `--user-type` to control which users are included (default: `technician`):
+```bash
+./ninja last-login --user-type technician   # technicians only (default)
+./ninja last-login --user-type enduser      # end users only
+./ninja last-login --user-type all          # technicians and end users
+```
+
+Use `--enabled-only` to exclude disabled users:
 ```bash
 ./ninja last-login --enabled-only
+```
+
+Use `--csv PATH` to export results to a CSV file:
+```bash
+./ninja last-login --csv output.csv
 ```
 
 For multiple environments, pass the environment name before the script name:
@@ -49,10 +61,12 @@ These variables belong in `env/default.env` or another selected `env/*.env` file
 - Outputs `Name`, `Email`, `Enabled`, `Admin`, `Roles`, and `Last Login`.
 
 ## Last login report behavior
-- Uses `/v2/users?userType=TECHNICIAN&includeRoles=true` to load technicians.
-- Uses `/v2/activities` with `status=APP_USER_LOGGED_IN` to capture the newest login activity for each technician.
+- Uses `/v2/users?userType=TECHNICIAN&includeRoles=true` (or `END_USER`, or both) depending on `--user-type` (default: `technician`).
+- Uses `/v2/activities` with `status=APP_USER_LOGGED_IN` (technicians) or `status=END_USER_LOGGED_IN` (end users) to capture the newest login activity for each user.
 - Outputs `Name`, `Email`, `Enabled`, `Admin`, `Roles`, and `Last Login`.
 - Sorts by `Last Login` descending, with `(never)` logins last.
+- Optionally writes results to a CSV file when `--csv PATH` is provided.
+- In `--user-type all` mode, warns to stderr if any users have no `userType` field and will show as `(never)`.
 
 ## No login for X days report example
 ```text
@@ -65,7 +79,7 @@ Total: 387
 
 ## Last login report example
 ```text
-Technician last login report for all technicians: 42
+Login report for technicians: 42
 Name                     Email                                         Enabled Admin Roles                  Last Login
 ...
 Total: 42
