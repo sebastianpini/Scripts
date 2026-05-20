@@ -19,6 +19,8 @@ NINJA_ONE_INSTANCE=eu.ninjarmm.com
 NINJA_ONE_CLIENT_ID=
 NINJA_ONE_CLIENT_SECRET=
 NINJA_ONE_SCOPE="monitoring management"
+NINJA_ONE_AUTH_CODE_SCOPE="monitoring management offline_access"
+NINJA_ONE_REDIRECT_URI=http://localhost:8080/
 ```
 
 Then run the reports:
@@ -27,6 +29,7 @@ Then run the reports:
 ./ninja last-login
 ./ninja no-login --days 14
 ./ninja org-summary
+./ninja owner-devices
 ```
 
 Do not put API credentials in `~/.zshrc` or paste them into shell history. Real `env/*.env` files are ignored by git.
@@ -63,6 +66,7 @@ And these script names:
 last-login
 no-login
 org-summary
+owner-devices
 ```
 
 ## PowerShell
@@ -104,6 +108,16 @@ Reports organization counts for total devices, workstations, servers, Apple mobi
 - Docs: [`ORGANIZATION_DEVICE_SUMMARY.md`](scripts/python/ninjaone-organization-device-summary-report/ORGANIZATION_DEVICE_SUMMARY.md)
 - Usage: `./ninja org-summary`
 - Prereqs: Python 3, NinjaOne OAuth client credentials in `env/default.env`
+
+### NinjaOne device owner assignment
+Assigns all devices to a technician owner using delegated Authorization Code Flow. It runs as a dry run unless `--apply` is passed.
+
+- Language: Python
+- Path: `scripts/python/ninjaone-device-owner-assignment/`
+- Docs: [`DEVICE_OWNER_ASSIGNMENT.md`](scripts/python/ninjaone-device-owner-assignment/DEVICE_OWNER_ASSIGNMENT.md)
+- Usage: `./ninja owner-devices` then `./ninja owner-devices --apply`
+- Prereqs: Python 3, NinjaOne OAuth web or native app credentials in `env/default.env`, `management` scope, and a registered redirect URI
+- Token cache: stores delegated access/refresh tokens in `.do_not_push/ninjaone-device-owner-token-cache.json` by default so repeated runs can refresh without another browser login
 
 ### Shared NinjaOne Python helper
 Provides common NinjaOne OAuth and JSON request helpers used by the Python NinjaOne reports.

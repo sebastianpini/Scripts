@@ -24,11 +24,14 @@ Scripts:
   last-login     Technician last login report
   no-login       Technicians with no login for N days
   org-summary    Organization device summary report
+  owner-devices  Assign all device owners to a technician
 
 Examples:
   ./ninja last-login
   ./ninja org-summary
   ./ninja no-login --days 14
+  ./ninja owner-devices
+  ./ninja owner-devices --apply
   ./ninja eu last-login
   ./ninja ca org-summary
   ./ninja it no-login --days 14
@@ -44,6 +47,7 @@ list_scripts() {
 last-login
 no-login
 org-summary
+owner-devices
 EOF
 }
 
@@ -74,6 +78,9 @@ resolve_script() {
       ;;
     org-summary)
       echo "scripts/python/ninjaone-organization-device-summary-report/organization_device_summary_report.py"
+      ;;
+    owner-devices)
+      echo "scripts/python/ninjaone-device-owner-assignment/assign_device_owner.py"
       ;;
     *)
       echo ""

@@ -71,3 +71,8 @@ assert_contains "$EXPLICIT_OUTPUT" "script=scripts/python/ninjaone-organization-
 HELP_OUTPUT="$(run_successfully "$TMP_DIR/ninja" help)"
 assert_contains "$HELP_OUTPUT" "./ninja <script> [args...]"
 assert_contains "$HELP_OUTPUT" "./ninja <env> <script> [args...]"
+assert_contains "$HELP_OUTPUT" "owner-devices"
+
+OWNER_OUTPUT="$(PATH="$TMP_DIR/bin:$PATH" run_successfully "$TMP_DIR/ninja" owner-devices --help)"
+assert_contains "$OWNER_OUTPUT" "script=scripts/python/ninjaone-device-owner-assignment/assign_device_owner.py"
+assert_contains "$OWNER_OUTPUT" "args=--help"
