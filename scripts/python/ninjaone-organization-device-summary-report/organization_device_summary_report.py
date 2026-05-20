@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-[Version 1.2.0] Report NinjaOne organization counts for workstations,
-servers, mobile devices, network devices, end users, and used cloud storage.
+[Version 1.3.0] Report NinjaOne organization counts for workstations,
+servers, mobile devices, network devices, end users, used cloud storage, and
+ticket totals.
 
 Environment variables:
 - NINJA_ONE_CLIENT_ID (required)
@@ -14,7 +15,17 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_shared"))
-from ninja_api import get_access_token, get_api_resource
+from ninja_api import get_access_token, get_api_resource, post_api_resource
+
+
+TICKET_INCLUDE_COLUMNS = [
+    "id",
+    "ticketId",
+    "clientId",
+    "organizationId",
+    "status",
+    "source",
+]
 
 
 def iter_items(response):
@@ -47,6 +58,23 @@ def first_value(data, paths):
         if value is not None:
             return value
     return None
+
+
+def unwrap_field_value(value):
+    if isinstance(value, dict):
+        for key in ("value", "textValue", "displayValue", "name", "id"):
+            if value.get(key) is not None:
+                return value[key]
+    return value
+
+
+def first_field_value(data, paths):
+    value = first_value(data, paths)
+    return unwrap_field_value(value)
+
+
+def normalized_label(value):
+    return str(value or "").strip().upper().replace("-", "_").replace(" ", "_")
 
 
 def numeric_value(value):
@@ -150,6 +178,134 @@ def storage_value(usage, paths):
     return numeric_value(first_value(usage, paths))
 
 
+def ticket_id(ticket):
+    return first_field_value(ticket, (("id",), ("ticketId",), ("ticket", "id")))
+
+
+def ticket_organization_id(ticket):
+    return first_field_value(
+        ticket,
+        (
+            ("clientId",),
+            ("organizationId",),
+            ("client", "id"),
+            ("organization", "id"),
+            ("references", "client", "id"),
+            ("references", "organization", "id"),
+            ("references", "device", "organizationId"),
+            ("references", "node", "organizationId"),
+            ("node", "organizationId"),
+        ),
+    )
+
+
+def ticket_organization_name(ticket):
+    organization = ticket.get("organization") if isinstance(ticket, dict) else None
+    if isinstance(organization, str):
+        return organization.strip()
+    return first_field_value(
+        ticket,
+        (
+            ("organization", "name"),
+            ("organization", "displayName"),
+            ("client", "name"),
+            ("client", "displayName"),
+            ("references", "client", "name"),
+            ("references", "organization", "name"),
+        ),
+    )
+
+
+def ticket_status(ticket):
+    return normalized_label(
+        first_field_value(
+            ticket,
+            (
+                ("status", "displayName"),
+                ("status", "value"),
+                ("status", "name"),
+                ("status",),
+                ("ticket", "status"),
+            ),
+        )
+    )
+
+
+def ticket_status_parent_id(ticket):
+    return numeric_value(
+        first_field_value(
+            ticket,
+            (
+                ("status", "parentId"),
+                ("status", "parentStatusId"),
+                ("status", "statusId"),
+                ("ticket", "status", "parentId"),
+            ),
+        )
+    )
+
+
+def ticket_source(ticket):
+    return normalized_label(
+        first_field_value(
+            ticket,
+            (
+                ("source", "value"),
+                ("source", "name"),
+                ("source",),
+                ("valueSource", "source"),
+                ("metadata", "source"),
+                ("ticket", "source"),
+            ),
+        )
+    )
+
+
+def is_user_ticket_source(source):
+    return source in {
+        "USER",
+        "TECHNICIAN",
+        "EMAIL",
+        "WEB_FORM",
+        "HELP_REQUEST",
+        "END_USER",
+        "CONTACT",
+    }
+
+
+def is_automation_ticket_source(source):
+    return source in {
+        "AUTOMATION",
+        "CONDITION",
+        "ACTIVITY",
+        "SCHEDULED_SCRIPT",
+        "SCRIPT",
+        "API",
+        "SYSTEM",
+        "POLICY",
+        "MONITOR",
+        "WEBHOOK",
+    }
+
+
+def is_open_ticket_status(ticket):
+    parent_id = ticket_status_parent_id(ticket)
+    status = ticket_status(ticket)
+    return parent_id == 2000 or status in {"OPEN", "OFFEN", "WORK_IN_PROGRESS"}
+
+
+def is_resolved_or_closed_ticket_status(ticket):
+    parent_id = ticket_status_parent_id(ticket)
+    status = ticket_status(ticket)
+    return parent_id in {5000, 6000} or status in {
+        "RESOLVED",
+        "CLOSED",
+        "GELOEST",
+        "GELÖST",
+        "GESCHLOSSEN",
+    }
+
+
 def get_optional_api_resource(paths, access_token, description):
     errors = []
 
@@ -160,18 +316,81 @@ def get_optional_api_resource(paths, access_token, description):
             errors.append(f"{path}: {exc}")
 
     print(
-        f"Could not query {description}; reporting 0.00 GB for that column. "
-        f"Tried: {'; '.join(errors)}",
+        f"Could not query {description}; continuing without that data. Tried: {'; '.join(errors)}",
         file=sys.stderr,
     )
     return []
 
 
-def build_summary(organizations, devices, end_users, backup_usage):
+def get_ticket_board_tickets(board_id, access_token):
+    tickets = []
+    last_cursor_id = None
+
+    while True:
+        json_body = {
+            "pageSize": 1000,
+            "includeColumns": TICKET_INCLUDE_COLUMNS,
+        }
+        if last_cursor_id is not None:
+            json_body["lastCursorId"] = last_cursor_id
+
+        response = post_api_resource(
+            f"/v2/ticketing/trigger/board/{board_id}/run",
+            access_token,
+            json_body=json_body,
+        )
+        tickets.extend(iter_items(response))
+
+        metadata = response.get("metadata", {}) if isinstance(response, dict) else {}
+        next_cursor_id = metadata.get("lastCursorId")
+        if not next_cursor_id or next_cursor_id == last_cursor_id:
+            break
+        last_cursor_id = next_cursor_id
+
+    return tickets
+
+
+def get_all_tickets(access_token):
+    boards = get_optional_api_resource(
+        ("/v2/ticketing/trigger/boards",),
+        access_token,
+        "ticket boards",
+    )
+    tickets = []
+    seen_ticket_ids = set()
+
+    for board in iter_items(boards):
+        board_id = first_field_value(board, (("id",), ("boardId",)))
+        if board_id is None:
+            continue
+
+        try:
+            board_tickets = get_ticket_board_tickets(board_id, access_token)
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"Could not query tickets for board {board_id}; skipping that board: {exc}",
+                file=sys.stderr,
+            )
+            continue
+
+        for ticket in board_tickets:
+            current_ticket_id = ticket_id(ticket)
+            if current_ticket_id is not None:
+                normalized_ticket_id = str(current_ticket_id)
+                if normalized_ticket_id in seen_ticket_ids:
+                    continue
+                seen_ticket_ids.add(normalized_ticket_id)
+            tickets.append(ticket)
+
+    return tickets
+
+
+def build_summary(organizations, devices, end_users, backup_usage, tickets=()):
     summary_by_org_id = {}
+    summary_by_org_name = {}
 
     for organization in organizations:
-        summary_by_org_id[str(organization["id"])] = {
+        entry = {
             "Name": organization["name"],
             "Workstations": 0,
             "Servers": 0,
@@ -180,7 +399,14 @@ def build_summary(organizations, devices, end_users, backup_usage):
             "NetworkDevices": 0,
             "EndUsers": 0,
             "CloudStorageUsedBytes": 0,
+            "TotalTickets": 0,
+            "OpenTickets": 0,
+            "ResolvedOrClosedTickets": 0,
+            "TicketsCreatedByUser": 0,
+            "TicketsCreatedByAutomation": 0,
         }
+        summary_by_org_id[str(organization["id"])] = entry
+        summary_by_org_name[str(organization["name"]).strip().casefold()] = entry
 
     for device in devices:
         organization = summary_by_org_id.get(str(device.get("organizationId")))
@@ -223,6 +449,37 @@ def build_summary(organizations, devices, end_users, backup_usage):
                 ("cloudUsedStorage",),
             ),
         )
+
+    seen_ticket_ids = set()
+    for ticket in iter_items(tickets):
+        current_ticket_id = ticket_id(ticket)
+        if current_ticket_id is not None:
+            normalized_ticket_id = str(current_ticket_id)
+            if normalized_ticket_id in seen_ticket_ids:
+                continue
+            seen_ticket_ids.add(normalized_ticket_id)
+
+        organization = summary_by_org_id.get(str(ticket_organization_id(ticket)))
+        if organization is None:
+            organization_name = ticket_organization_name(ticket)
+            if organization_name is not None:
+                organization = summary_by_org_name.get(str(organization_name).strip().casefold())
+        if organization is None:
+            continue
+
+        organization["TotalTickets"] += 1
+
+        if is_open_ticket_status(ticket):
+            organization["OpenTickets"] += 1
+        elif is_resolved_or_closed_ticket_status(ticket):
+            organization["ResolvedOrClosedTickets"] += 1
+
+        source = ticket_source(ticket)
+        if is_user_ticket_source(source):
+            organization["TicketsCreatedByUser"] += 1
+        elif is_automation_ticket_source(source):
+            organization["TicketsCreatedByAutomation"] += 1
+
     return [
         {
             "Name": entry["Name"],
@@ -240,6 +497,11 @@ def build_summary(organizations, devices, end_users, backup_usage):
             "NetworkDevices": entry["NetworkDevices"],
             "EndUsers": entry["EndUsers"],
             "CloudStorageUsedGB": f"{storage_gb(entry['CloudStorageUsedBytes']):.2f}",
+            "TotalTickets": entry["TotalTickets"],
+            "OpenTickets": entry["OpenTickets"],
+            "ResolvedOrClosedTickets": entry["ResolvedOrClosedTickets"],
+            "TicketsCreatedByUser": entry["TicketsCreatedByUser"],
+            "TicketsCreatedByAutomation": entry["TicketsCreatedByAutomation"],
         }
         for entry in summary_by_org_id.values()
     ]
@@ -259,6 +521,11 @@ def print_table(rows):
         "AndroidDevices",
         "NetworkDevices",
         "EndUsers",
+        "TotalTickets",
+        "OpenTickets",
+        "ResolvedOrClosedTickets",
+        "TicketsCreatedByUser",
+        "TicketsCreatedByAutomation",
         "CloudStorageUsedGB",
     ]
     widths = {column: len(column) for column in columns}
@@ -294,7 +561,8 @@ def main():
         access_token,
         "cloud backup usage",
     )
-    summary = build_summary(organizations, devices, end_users, backup_usage)
+    tickets = get_all_tickets(access_token)
+    summary = build_summary(organizations, devices, end_users, backup_usage, tickets)
     print_table(summary)
     return 0
 

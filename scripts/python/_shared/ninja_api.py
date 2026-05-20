@@ -26,13 +26,19 @@ def require_env(name, value):
     return value
 
 
-def request_json(url, method="GET", headers=None, form_body=None):
+def request_json(url, method="GET", headers=None, form_body=None, json_body=None):
     body = None
     request_headers = headers.copy() if headers else {}
+
+    if form_body is not None and json_body is not None:
+        raise RuntimeError("Use either form_body or json_body, not both.")
 
     if form_body is not None:
         body = urllib.parse.urlencode(form_body).encode("utf-8")
         request_headers["Content-Type"] = "application/x-www-form-urlencoded"
+    elif json_body is not None:
+        body = json.dumps(json_body).encode("utf-8")
+        request_headers["Content-Type"] = "application/json"
 
     request = urllib.request.Request(url, data=body, headers=request_headers, method=method)
     context = ssl.create_default_context()
@@ -75,4 +81,16 @@ def get_api_resource(path, access_token):
             "Accept": "application/json",
             "Authorization": f"Bearer {access_token}",
         },
+    )
+
+
+def post_api_resource(path, access_token, json_body=None):
+    return request_json(
+        f"https://{NINJA_ONE_INSTANCE}{path}",
+        method="POST",
+        headers={
+            "Accept": "application/json",
+            "Authorization": f"Bearer {access_token}",
+        },
+        json_body=json_body or {},
     )
