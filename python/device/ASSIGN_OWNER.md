@@ -18,7 +18,7 @@ instead of client credentials.
 Create or update your environment file:
 
 ```bash
-cp env/example.env env/default.env
+cp env/rename_to_default.env env/default.env
 ```
 
 Set these values:
@@ -48,7 +48,7 @@ the existing client-credentials reports.
 The script stores delegated OAuth tokens locally in:
 
 ```text
-.do_not_push/ninjaone-device-owner-token-cache.json
+.do_not_push/token.json
 ```
 
 That folder is gitignored. Treat this file like a password because the

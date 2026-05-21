@@ -12,7 +12,7 @@ Environment variables:
 - NINJA_ONE_SCOPE (optional, defaults to "monitoring management")
 - NINJA_ONE_AUTH_CODE_SCOPE (optional, defaults to NINJA_ONE_SCOPE + offline_access)
 - NINJA_ONE_REDIRECT_URI (optional, defaults to "http://localhost:8080/")
-- NINJA_ONE_TOKEN_CACHE (optional, defaults to ".do_not_push/ninjaone-device-owner-token-cache.json")
+- NINJA_ONE_TOKEN_CACHE (optional, defaults to ".do_not_push/token.json")
 """
 
 import argparse

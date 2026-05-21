@@ -81,7 +81,7 @@ Assigns all devices to a technician owner using delegated Authorization Code Flo
 - Docs: [`ASSIGN_OWNER.md`](python/device/ASSIGN_OWNER.md)
 - Usage: `python ninja.py owner-devices` then `python ninja.py owner-devices --apply`
 - Prereqs: Python 3, NinjaOne OAuth web or native app credentials in `env/default.env`, `management` scope, and a registered redirect URI
-- Token cache: stores delegated access/refresh tokens in `.do_not_push/ninjaone-device-owner-token-cache.json` by default so repeated runs can refresh without another browser login
+- Token cache: stores delegated access/refresh tokens in `.do_not_push/token.json` by default so repeated runs can refresh without another browser login
 
 ### Shared NinjaOne Python helper
 Provides common NinjaOne OAuth and JSON request helpers used by the Python NinjaOne reports.
