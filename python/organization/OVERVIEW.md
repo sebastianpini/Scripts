@@ -6,13 +6,13 @@ Reports NinjaOne organization counts for workstations, servers, Apple mobile dev
 Store NinjaOne credentials in `env/default.env` as described in the repository root README. Then run from the repository root:
 
 ```bash
-./ninja org-summary
+python ninja.py org-summary
 ```
 
 For multiple environments, pass the environment name before the script name:
 
 ```bash
-./ninja demo-eu org-summary
+python ninja.py demo-eu org-summary
 ```
 
 ## Environment variables

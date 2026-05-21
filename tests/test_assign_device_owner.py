@@ -11,14 +11,11 @@ from pathlib import Path
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-SCRIPT_PATH = (
-    ROOT_DIR
-    / "scripts/python/ninjaone-device-owner-assignment/assign_device_owner.py"
-)
+SCRIPT_PATH = ROOT_DIR / "python/device/assign_owner.py"
 
 
 def load_module():
-    spec = importlib.util.spec_from_file_location("assign_device_owner", SCRIPT_PATH)
+    spec = importlib.util.spec_from_file_location("assign_owner", SCRIPT_PATH)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

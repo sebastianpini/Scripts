@@ -7,40 +7,40 @@ Lists every NinjaOne user sorted descending by their latest login activity. User
 Store NinjaOne credentials in `env/default.env` as described in the repository root README. Then run from the repository root:
 
 ```bash
-./ninja last-login
+python ninja.py last-login
 ```
 
 Use `--user-type` to control which users are included (default: `technician`):
 ```bash
-./ninja last-login --user-type technician   # technicians only (default)
-./ninja last-login --user-type enduser      # end users only
-./ninja last-login --user-type all          # technicians and end users
+python ninja.py last-login --user-type technician   # technicians only (default)
+python ninja.py last-login --user-type enduser      # end users only
+python ninja.py last-login --user-type all          # technicians and end users
 ```
 
 Use `--enabled-only` to exclude disabled users:
 ```bash
-./ninja last-login --enabled-only
+python ninja.py last-login --enabled-only
 ```
 
 Use `--csv PATH` to export results to a CSV file:
 ```bash
-./ninja last-login --csv /Users/sebastian/Desktop/last_login_report.csv
+python ninja.py last-login --csv /Users/sebastian/Desktop/last_login_report.csv
 ```
 
 Use `--xlsx PATH` to export results to a formatted Excel file (auto-fitted columns, filterable table):
 ```bash
-./ninja last-login --xlsx /Users/sebastian/Desktop/last_login_report.xlsx
+python ninja.py last-login --xlsx /Users/sebastian/Desktop/last_login_report.xlsx
 ```
 
 Both flags can be combined:
 ```bash
-./ninja last-login --user-type all --enabled-only --xlsx /Users/sebastian/Desktop/last_login_report.xlsx
+python ninja.py last-login --user-type all --enabled-only --xlsx /Users/sebastian/Desktop/last_login_report.xlsx
 ```
 
 For multiple environments, pass the environment name before the script name:
 
 ```bash
-./ninja demo-eu last-login
+python ninja.py demo-eu last-login
 ```
 
 ## Environment variables
@@ -64,9 +64,9 @@ These variables belong in `env/default.env` or another selected `env/*.env` file
 ```text
 Login report for technicians: 42
 Name                     Email                              Type        Enabled Admin Roles        Last Login
------------------------- ---------------------------------- ----------- ------- ----- ---------- -----------------------
-Jane Smith               jane.smith@example.com             Technician  Yes     Yes   IT Admin   2026-05-18 09:41:22 CEST
-John Doe                 john.doe@example.com               Technician  Yes     No    Helpdesk   2026-03-02 14:07:55 CET
+------------------------ ---------------------------------- ----------- ------- ----- ---------- -------------------------
+Jane Smith               jane.smith@example.com             Technician  Yes     Yes   IT Admin   2026-05-18T09:41:22+02:00
+John Doe                 john.doe@example.com               Technician  Yes     No    Helpdesk   2026-03-02T14:07:55+01:00
 ...
 Total: 42
 ```

@@ -6,10 +6,10 @@ roles, and last login timestamp. Supports technicians, end users, or both
 via --user-type, with optional CSV and Excel export.
 
 Usage:
-  python technician_last_login_report.py [--user-type {technician,enduser,all}]
-                                         [--enabled-only]
-                                         [--csv PATH]
-                                         [--xlsx PATH]
+  python ninja.py last-login [--user-type {technician,enduser,all}]
+                             [--enabled-only]
+                             [--csv PATH]
+                             [--xlsx PATH]
 
 Arguments:
   --user-type    User type to include: technician (default), enduser, or all.
@@ -33,7 +33,6 @@ from urllib.parse import urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_shared"))
 from ninja_api import get_access_token, get_api_resource
-from excel_export import write_xlsx
 
 
 TECHNICIAN_LOGIN_STATUS = "APP_USER_LOGGED_IN"
@@ -163,9 +162,7 @@ def format_last_login(timestamp):
     if timestamp is None:
         return "(never)"
 
-    return datetime.fromtimestamp(timestamp, tz=timezone.utc).astimezone().strftime(
-        "%Y-%m-%d %H:%M:%S %Z"
-    )
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
 def build_rows(technicians, last_login_by_user_id):
@@ -273,6 +270,8 @@ def main():
         write_csv(rows, args.csv)
         print(f"Wrote {len(rows)} rows to {args.csv}")
     if args.xlsx:
+        from excel_export import write_xlsx
+
         columns = ["Name", "Email", "Type", "Enabled", "Admin", "Roles", "Last Login"]
         write_xlsx(rows, columns, args.xlsx)
         print(f"Wrote {len(rows)} rows to {args.xlsx}")

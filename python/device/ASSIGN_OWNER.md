@@ -70,9 +70,9 @@ of `assign_owner.py`:
 Cache controls:
 
 ```bash
-./ninja owner-devices --reset-token-cache
-./ninja owner-devices --no-token-cache
-./ninja owner-devices --token-cache .do_not_push/custom-token-cache.json
+python ninja.py owner-devices --reset-token-cache
+python ninja.py owner-devices --no-token-cache
+python ninja.py owner-devices --token-cache .do_not_push/custom-token-cache.json
 ```
 
 ## Usage
@@ -80,13 +80,13 @@ Cache controls:
 Dry run first:
 
 ```bash
-./ninja owner-devices
+python ninja.py owner-devices
 ```
 
 Apply the changes:
 
 ```bash
-./ninja owner-devices --apply
+python ninja.py owner-devices --apply
 ```
 
 By default, the owner lookup is by technician name:
@@ -98,19 +98,19 @@ Sebastian Pini
 You can be more explicit:
 
 ```bash
-./ninja owner-devices --owner-email sebastian@example.com
-./ninja owner-devices --owner-uid 00000000-0000-0000-0000-000000000000
+python ninja.py owner-devices --owner-email sebastian@example.com
+python ninja.py owner-devices --owner-uid 00000000-0000-0000-0000-000000000000
 ```
 
 If your registered redirect URI is not localhost, capture the `code` from the
 redirect URL manually and pass it in:
 
 ```bash
-./ninja owner-devices --auth-code CODE_FROM_REDIRECT_URL
+python ninja.py owner-devices --auth-code CODE_FROM_REDIRECT_URL
 ```
 
 For native app registrations, use PKCE:
 
 ```bash
-./ninja owner-devices --pkce
+python ninja.py owner-devices --pkce
 ```

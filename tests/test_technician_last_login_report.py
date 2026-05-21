@@ -9,17 +9,11 @@ import unittest
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-SCRIPT_PATH = (
-    ROOT_DIR
-    / "scripts/python/ninjaone-technician-inactive-login-report/technician_last_login_report.py"
-)
+SCRIPT_PATH = ROOT_DIR / "python/user/last_login.py"
 
 
 def load_module():
-    spec = importlib.util.spec_from_file_location(
-        "technician_last_login_report",
-        SCRIPT_PATH,
-    )
+    spec = importlib.util.spec_from_file_location("last_login", SCRIPT_PATH)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -35,7 +29,7 @@ class WriteCsvTests(unittest.TestCase):
                 "Enabled": "Yes",
                 "Admin": "No",
                 "Roles": "Helpdesk",
-                "Last Login": "2026-01-15 10:00:00 UTC",
+                "Last Login": "2026-01-15T10:00:00+00:00",
                 "_sort_ts": 1736935200.0,
             }
         ]

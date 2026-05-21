@@ -4,17 +4,19 @@ A curated list of useful scripts. This README is the customer entry point for se
 
 ## How credentials work
 
-Scripts read NinjaOne credentials from environment variables (`NINJA_ONE_CLIENT_ID`, `NINJA_ONE_CLIENT_SECRET`, etc.). The `./ninja` wrapper loads those variables from a local `env/*.env` file before running the script — so you never have to set them in your shell manually. Running a script directly skips the wrapper and reads from whatever environment variables are already set in your shell.
+Scripts read NinjaOne credentials from environment variables (`NINJA_ONE_CLIENT_ID`, `NINJA_ONE_CLIENT_SECRET`, etc.). The `ninja.py` launcher loads those variables from a local `env/*.env` file before running the script — so you never have to set them in your shell manually. Running a script directly skips the launcher and reads from whatever environment variables are already set in your shell.
 
 ## Quick Start For Customers
 
 Most customers only query one NinjaOne environment. Open `env/default.env` and fill in your NinjaOne API credentials, then run the reports:
 
 ```bash
-./ninja last-login
-./ninja org-summary
-./ninja owner-devices
+python ninja.py last-login
+python ninja.py org-summary
+python ninja.py owner-devices
 ```
+
+On macOS/Linux you can also run `./ninja.py last-login` once you've made the file executable (`chmod +x ninja.py`). On Windows the `python ninja.py …` form is the standard way.
 
 Do not put API credentials in `~/.zshrc` or paste them into shell history. Real `env/*.env` files are ignored by git.
 
@@ -28,8 +30,8 @@ cp env/default.env env/demo2.env   # fill in demo2 credentials
 ```
 
 ```bash
-./ninja demo1 last-login
-./ninja demo2 org-summary
+python ninja.py demo1 last-login
+python ninja.py demo2 org-summary
 ```
 
 Available script names:
@@ -59,7 +61,7 @@ Lists NinjaOne technicians sorted descending by latest platform login activity.
 - Language: Python
 - Path: `python/user/`
 - Docs: [`LAST_LOGIN.md`](python/user/LAST_LOGIN.md)
-- Usage: `./ninja last-login`
+- Usage: `python ninja.py last-login`
 - Prereqs: Python 3, NinjaOne OAuth client credentials in `env/default.env`
 
 ### NinjaOne organization device summary report
@@ -68,7 +70,7 @@ Reports organization counts for total devices, workstations, servers, Apple mobi
 - Language: Python
 - Path: `python/organization/`
 - Docs: [`OVERVIEW.md`](python/organization/OVERVIEW.md)
-- Usage: `./ninja org-summary`
+- Usage: `python ninja.py org-summary`
 - Prereqs: Python 3, NinjaOne OAuth client credentials in `env/default.env`
 
 ### NinjaOne device owner assignment
@@ -77,7 +79,7 @@ Assigns all devices to a technician owner using delegated Authorization Code Flo
 - Language: Python
 - Path: `python/device/`
 - Docs: [`ASSIGN_OWNER.md`](python/device/ASSIGN_OWNER.md)
-- Usage: `./ninja owner-devices` then `./ninja owner-devices --apply`
+- Usage: `python ninja.py owner-devices` then `python ninja.py owner-devices --apply`
 - Prereqs: Python 3, NinjaOne OAuth web or native app credentials in `env/default.env`, `management` scope, and a registered redirect URI
 - Token cache: stores delegated access/refresh tokens in `.do_not_push/ninjaone-device-owner-token-cache.json` by default so repeated runs can refresh without another browser login
 
