@@ -55,8 +55,8 @@ Installs a Winget package in machine scope under SYSTEM, with RMM-friendly loggi
 
 ## Python
 
-### NinjaOne technician last login report
-Lists NinjaOne technicians sorted descending by latest platform login activity.
+### User last login report
+Lists NinjaOne users — technicians, end users, or both — sorted by most recent platform login activity. Supports CSV and Excel export.
 
 - Language: Python
 - Path: `python/user/`
@@ -64,8 +64,8 @@ Lists NinjaOne technicians sorted descending by latest platform login activity.
 - Usage: `python ninja.py last-login`
 - Prereqs: Python 3, NinjaOne OAuth client credentials in `env/default.env`
 
-### NinjaOne organization device summary report
-Reports organization counts for total devices, workstations, servers, Apple mobile devices, Android devices, network devices, end users, and used cloud backup storage.
+### Organization overview report
+Reports per-organization counts for devices (workstations, servers, Apple mobile, Android, network), end users, tickets (by status and source), and used cloud backup storage.
 
 - Language: Python
 - Path: `python/organization/`
@@ -73,8 +73,8 @@ Reports organization counts for total devices, workstations, servers, Apple mobi
 - Usage: `python ninja.py org-summary`
 - Prereqs: Python 3, NinjaOne OAuth client credentials in `env/default.env`
 
-### NinjaOne device owner assignment
-Assigns all devices to a technician owner using delegated Authorization Code Flow. It runs as a dry run unless `--apply` is passed.
+### Bulk device owner assignment
+Assigns all devices to a technician owner using delegated Authorization Code Flow. Runs as a dry run unless `--apply` is passed.
 
 - Language: Python
 - Path: `python/device/`
@@ -83,8 +83,8 @@ Assigns all devices to a technician owner using delegated Authorization Code Flo
 - Prereqs: Python 3, NinjaOne OAuth web or native app credentials in `env/default.env`, `management` scope, and a registered redirect URI
 - Token cache: stores delegated access/refresh tokens in `.do_not_push/token.json` by default so repeated runs can refresh without another browser login
 
-### Shared NinjaOne Python helper
-Provides common NinjaOne OAuth and JSON request helpers used by the Python NinjaOne reports.
+### Shared NinjaOne helpers
+Common OAuth and JSON request helpers used by the Python NinjaOne reports.
 
 - Language: Python
 - Path: `python/_shared/ninja_api.py`
